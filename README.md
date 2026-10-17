@@ -179,7 +179,8 @@ flutter test        # 单元测试（8 例全过）
 ```bash
 flutter build apk --release
 ```
-产物：`build/app/outputs/flutter-apk/app-release.apk`（约 20MB，debug 签名，可直接安装）。
+产物：`build/app/outputs/flutter-apk/app-release.apk`（约 52.8MB，通用包含全部 ABI，debug 签名可直接安装；
+也可从 GitHub Releases 直接下载，或执行 `flutter build apk --split-per-abi` 得到单 ABI 约 15-20MB 的包）。
 
 > 国内网络提示：`android/build.gradle.kts` 与 `settings.gradle.kts` 已配置阿里云 Maven 镜像，
 > `gradle-wrapper.properties` 使用腾讯云 Gradle 发行包镜像，无需翻墙即可完成构建。
