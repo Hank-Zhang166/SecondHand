@@ -123,6 +123,23 @@ class CloudClient {
   void Function()? onUnauthorized;
   final http.Client _http = http.Client();
 
+  /// 所有网络请求统一超时，防止挂起阻塞 UI
+  static const _timeout = Duration(seconds: 15);
+
+  Future<http.Response> _get(Uri url, {Map<String, String>? headers}) =>
+      _http.get(url, headers: headers).timeout(_timeout);
+
+  Future<http.Response> _post(Uri url,
+          {Map<String, String>? headers, Object? body}) =>
+      _http.post(url, headers: headers, body: body).timeout(_timeout);
+
+  Future<http.Response> _patch(Uri url,
+          {Map<String, String>? headers, Object? body}) =>
+      _http.patch(url, headers: headers, body: body).timeout(_timeout);
+
+  Future<http.Response> _delete(Uri url, {Map<String, String>? headers}) =>
+      _http.delete(url, headers: headers).timeout(_timeout);
+
   Map<String, String> _headers({bool json = true}) {
     final h = <String, String>{
       'x-wb-webapp-access-key': CloudConfig.publishableKey,
@@ -167,7 +184,7 @@ class CloudClient {
     } else {
       throw CloudException(0, 'BAD_ARGS', '请填写手机号或邮箱');
     }
-    final r = await _http.post(
+    final r = await _post(
       Uri.parse('${CloudConfig.endpoint}${CloudConfig.authPath}/verification'),
       headers: _headers(),
       body: jsonEncode(body),
@@ -193,7 +210,7 @@ class CloudClient {
     };
     if (phone != null && phone.isNotEmpty) body['phone_number'] = '+86 $phone';
     if (email != null && email.isNotEmpty) body['email'] = email;
-    final r = await _http.post(
+    final r = await _post(
       Uri.parse(
           '${CloudConfig.endpoint}${CloudConfig.authPath}/verification/verify'),
       headers: _headers(),
@@ -209,7 +226,7 @@ class CloudClient {
     required String username,
     required String verificationToken,
   }) async {
-    final r = await _http.post(
+    final r = await _post(
       Uri.parse('${CloudConfig.endpoint}${CloudConfig.authPath}/signin'),
       headers: _headers(),
       body: jsonEncode(
@@ -228,7 +245,7 @@ class CloudClient {
     final body = <String, dynamic>{'verification_token': verificationToken};
     if (phone != null && phone.isNotEmpty) body['phone_number'] = '+86 $phone';
     if (email != null && email.isNotEmpty) body['email'] = email;
-    final r = await _http.post(
+    final r = await _post(
       Uri.parse('${CloudConfig.endpoint}${CloudConfig.authPath}/signup'),
       headers: _headers(),
       body: jsonEncode(body),
@@ -242,7 +259,7 @@ class CloudClient {
     required String username,
     required String password,
   }) async {
-    final r = await _http.post(
+    final r = await _post(
       Uri.parse('${CloudConfig.endpoint}${CloudConfig.authPath}/signin'),
       headers: _headers(),
       body: jsonEncode({'username': username, 'password': password}),
@@ -253,7 +270,7 @@ class CloudClient {
 
   /// 刷新会话
   Future<Session> refresh(String refreshToken) async {
-    final r = await _http.post(
+    final r = await _post(
       Uri.parse('${CloudConfig.endpoint}${CloudConfig.authPath}/token'),
       headers: _headers(),
       body: jsonEncode(
@@ -265,7 +282,7 @@ class CloudClient {
 
   /// 当前登录用户
   Future<AuthUser> currentUser() async {
-    final r = await _http.get(
+    final r = await _get(
       Uri.parse('${CloudConfig.endpoint}${CloudConfig.authPath}/user/me'),
       headers: _headers(),
     );
@@ -311,7 +328,7 @@ class CloudClient {
     if (offset != null) q['offset'] = '$offset';
     final uri = Uri.parse('${CloudConfig.endpoint}${CloudConfig.databasePath}/$table')
         .replace(queryParameters: q);
-    final r = await _http.get(uri, headers: _headers());
+    final r = await _get(uri, headers: _headers());
     if (r.statusCode != 200 && r.statusCode != 206) _fail(r);
     final data = jsonDecode(r.body);
     return data is List ? data : [];
@@ -329,7 +346,7 @@ class CloudClient {
 
   /// 插入（owner_id 由数据库 DEFAULT auth.uid() 自动填充，客户端不要传）
   Future<List<dynamic>> insert(String table, Map<String, dynamic> row) async {
-    final r = await _http.post(
+    final r = await _post(
       Uri.parse('${CloudConfig.endpoint}${CloudConfig.databasePath}/$table'),
       headers: {..._headers(), 'Prefer': 'return=representation'},
       body: jsonEncode(row),
@@ -348,7 +365,7 @@ class CloudClient {
     final uri = Uri.parse(
             '${CloudConfig.endpoint}${CloudConfig.databasePath}/$table')
         .replace(queryParameters: filter);
-    final r = await _http.patch(
+    final r = await _patch(
       uri,
       headers: {..._headers(), 'Prefer': 'return=representation'},
       body: jsonEncode(values),
@@ -366,7 +383,7 @@ class CloudClient {
     final uri = Uri.parse(
             '${CloudConfig.endpoint}${CloudConfig.databasePath}/$table')
         .replace(queryParameters: filter);
-    final r = await _http.delete(
+    final r = await _delete(
       uri,
       headers: {..._headers(), 'Prefer': 'return=representation'},
     );
@@ -398,7 +415,7 @@ class CloudClient {
       filename: path.split('/').last,
       contentType: http.MediaType.parse(contentType),
     ));
-    final resp = await _http.send(req);
+    final resp = await _http.send(req).timeout(_timeout);
     final body = await resp.stream.bytesToString();
     if (resp.statusCode != 200 && resp.statusCode != 201) {
       _fail(http.Response(body, resp.statusCode));
@@ -410,7 +427,7 @@ class CloudClient {
   /// 批量获取签名下载 URL，返回 {存储路径: 可访问 URL}
   Future<Map<String, String>> signedUrls(List<String> paths) async {
     if (paths.isEmpty) return {};
-    final r = await _http.post(
+    final r = await _post(
       Uri.parse(
           '${CloudConfig.endpoint}${CloudConfig.storagePath}/object/sign/${CloudConfig.storageBucket}'),
       headers: _headers(),

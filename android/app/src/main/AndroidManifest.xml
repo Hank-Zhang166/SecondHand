@@ -33,6 +33,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 部分机型 Impeller 渲染存在兼容问题（表现为白屏/花屏），
+             这里显式回退到 Skia 渲染后端，保证首帧可靠绘制 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
@@ -9,6 +10,7 @@ import 'pages/messages_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/publish_page.dart';
 import 'services/auth_service.dart';
+import 'services/history_store.dart';
 import 'state/app_state.dart';
 
 /// 应用根组件：主题 + 登录态守卫 + 主框架（底部导航）
@@ -21,7 +23,7 @@ class SecondHandApp extends StatelessWidget {
       title: '清华二手',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
-      home: const _RootGate(),
+      home: const AppBootstrap(),
     );
   }
 
@@ -76,8 +78,8 @@ class SecondHandApp extends StatelessWidget {
 }
 
 /// 登录态守卫：未登录 -> 登录页；已登录 -> 主框架
-class _RootGate extends StatelessWidget {
-  const _RootGate();
+class RootGate extends StatelessWidget {
+  const RootGate({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -162,6 +164,219 @@ class RootShellState extends State<RootShell> {
         child: const Icon(Icons.add),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+    );
+  }
+}
+
+/// 启动引导：先渲染启动页（保证首帧立即可见），
+/// 再在首帧之后安全地完成初始化，任何一步超时/失败都有兜底，
+/// 绝不会把用户留在白屏上。
+class AppBootstrap extends StatefulWidget {
+  const AppBootstrap({super.key});
+
+  @override
+  State<AppBootstrap> createState() => _AppBootstrapState();
+}
+
+class _AppBootstrapState extends State<AppBootstrap> {
+  String _step = '正在启动…';
+  bool _failed = false;
+  String? _error;
+  AppServices? _services;
+
+  @override
+  void initState() {
+    super.initState();
+    // 推迟到首帧之后：runApp 后的第一帧立即可见（品牌启动页），
+    // 插件/网络调用全部在此之后进行，不会阻塞首帧。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+  }
+
+  Future<void> _init() async {
+    try {
+      // ---------- 步骤 1：本地存储 ----------
+      if (mounted) setState(() => _step = '正在初始化本地存储…');
+      final prefs = await _openPrefs();
+
+      // ---------- 步骤 2：恢复登录状态 ----------
+      if (mounted) setState(() => _step = '正在恢复登录状态…');
+      final services = AppServices(prefs);
+      await services.auth.restore().timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {}, // 超时视为未登录，不阻断启动
+          );
+      services.history.load();
+
+      if (!mounted) return;
+      setState(() {
+        _services = services;
+        _step = '准备就绪';
+      });
+    } catch (e, st) {
+      debugPrint('BOOTSTRAP FAILED: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _error = '$e';
+      });
+    }
+  }
+
+  /// 打开 SharedPreferences；8 秒超时后用内存兜底，
+  /// 保证任何情况下都能进入 UI（白屏的最后一道防线）。
+  Future<SharedPreferences> _openPrefs() async {
+    try {
+      return await SharedPreferences.getInstance()
+          .timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('SharedPreferences failed, fallback to memory: $e');
+      // ignore: invalid_use_of_visible_for_testing_member
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      // ignore: invalid_use_of_visible_for_testing_member
+      return SharedPreferences.getInstance();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) {
+      return StartupErrorScreen(_error ?? '未知错误', onRetry: () {
+        setState(() {
+          _failed = false;
+          _error = null;
+          _step = '正在启动…';
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+      });
+    }
+    final services = _services;
+    if (services == null) {
+      return _StartupSplash(step: _step);
+    }
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthService>.value(value: services.auth),
+        Provider<AppServices>.value(value: services),
+        ChangeNotifierProvider<HistoryStore>.value(value: services.history),
+      ],
+      child: const RootGate(),
+    );
+  }
+}
+
+/// 品牌启动页：让用户明确知道 App 正在启动、卡在哪一步
+class _StartupSplash extends StatelessWidget {
+  const _StartupSplash({required this.step});
+
+  final String step;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF660874),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: const Icon(Icons.shopping_bag_outlined,
+                  size: 46, color: Color(0xFF660874)),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              '清华二手',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '校内二手 · 面对面交易',
+              style: TextStyle(color: Color(0xFFE1BEE7), fontSize: 13),
+            ),
+            const SizedBox(height: 36),
+            SizedBox(
+              width: 140,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: const LinearProgressIndicator(
+                  minHeight: 4,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  backgroundColor: Color(0xFF9C6BAE),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              step,
+              style: const TextStyle(color: Color(0xFFE1BEE7), fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// release 模式下可见的错误页（替代默认空白 ErrorWidget），
+/// 用于定位线上白屏问题；提供重试入口。
+class StartupErrorScreen extends StatelessWidget {
+  const StartupErrorScreen(this.error, {this.onRetry, super.key});
+
+  final Object? error;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Material(
+        color: Colors.white,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.error_outline,
+                    size: 56, color: Color(0xFFD32F2F)),
+                const SizedBox(height: 16),
+                const Text(
+                  '页面加载出现问题',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      '${error ?? '未知错误'}',
+                      style: const TextStyle(
+                          fontSize: 12, color: Color(0xFF616161)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (onRetry != null)
+                  FilledButton(
+                    onPressed: onRetry,
+                    child: const Text('重试'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
