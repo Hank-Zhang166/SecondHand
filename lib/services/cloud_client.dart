@@ -79,7 +79,7 @@ class Session {
   });
 
   bool get expired =>
-      DateTime.now().millisecondsSinceEpoch >= expiresAt - 60 * 1000;
+      DateTime.now().millisecondsSinceEpoch >= expiresAt - 90 * 1000;
 
   Map<String, dynamic> toJson() => {
         'access_token': accessToken,
@@ -107,7 +107,7 @@ class OtpChallenge {
 
 /// 云端 HTTP 客户端
 ///
-/// 完整复刻 WorkBuddy 云端 SDK 的 HTTP 契约：
+/// 完整复刻云端 SDK 的 HTTP 契约：
 /// - 所有请求携带 `x-wb-webapp-access-key` 头（应用标识）
 /// - 登录后自动携带 `Authorization: Bearer <token>`
 /// - 认证：/.cloud/auth/v1/**（验证码 / 登录 / 注册 / 刷新）
@@ -140,6 +140,17 @@ class CloudClient {
   Future<http.Response> _delete(Uri url, {Map<String, String>? headers}) =>
       _http.delete(url, headers: headers).timeout(_timeout);
 
+  /// 手机号规范化（与云端 SDK 一致）：11 位大陆号转 "+86 <号码>"，
+  /// 带 0086/86 前缀的先剥离，其余原样返回
+  static String normalizePhone(String input) {
+    var digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('0086')) digits = digits.substring(4);
+    if (digits.startsWith('86') && digits.length == 13) {
+      digits = digits.substring(2);
+    }
+    return RegExp(r'^1\d{10}$').hasMatch(digits) ? '+86 $digits' : input;
+  }
+
   Map<String, String> _headers({bool json = true}) {
     final h = <String, String>{
       'x-wb-webapp-access-key': CloudConfig.publishableKey,
@@ -167,7 +178,37 @@ class CloudClient {
       // 响应不是 JSON，使用默认文案
     }
     if (r.statusCode == 401) onUnauthorized?.call();
-    throw CloudException(r.statusCode, code, message);
+    throw CloudException(r.statusCode, code, _friendlyMessage(message, code));
+  }
+
+  /// 把后端原始错误（多为英文/半英文）映射为面向用户的中文文案
+  String _friendlyMessage(String raw, String code) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('session is invalid') ||
+        lower.contains('expired or issued')) {
+      return '登录状态已失效，请重新登录';
+    }
+    if (lower.contains('resource_exhausted') ||
+        lower.contains('too many') ||
+        lower.contains('rate limit') ||
+        lower.contains('429')) {
+      return '操作太频繁了，请 1 分钟后再试';
+    }
+    if (raw.contains('验证码') || lower.contains('verification code')) {
+      return '验证码不正确或已过期，请重新获取';
+    }
+    if (raw.contains('User not exist') || raw.contains('user not found')) {
+      return '账号不存在，请先注册';
+    }
+    if (raw.contains('already') || lower.contains('duplicate')) {
+      return '该账号已存在，请直接登录';
+    }
+    if (code == 'HTTP_401' || lower.contains('invalid_grant')) {
+      return '登录状态已失效，请重新登录';
+    }
+    if (raw.startsWith('网络请求失败')) return raw;
+    // 其余情况不暴露原始英文报文
+    return '服务开小差了，请稍后重试';
   }
 
   // ==================== 认证模块 ====================
@@ -176,7 +217,7 @@ class CloudClient {
   Future<OtpChallenge> sendOtp({String? phone, String? email}) async {
     final body = <String, dynamic>{};
     if (phone != null && phone.isNotEmpty) {
-      body['phone_number'] = '+86 $phone';
+      body['phone_number'] = normalizePhone(phone);
       body['target'] = 'ANY';
     } else if (email != null && email.isNotEmpty) {
       body['email'] = email;
@@ -198,23 +239,21 @@ class CloudClient {
   }
 
   /// 校验验证码，返回一次性 verification_token
+  ///
+  /// 请求体与云端 SDK 保持完全一致：只传 verification_id + verification_code，
+  /// 由 SDK 的闭环流程决定后续走 signin 还是 signup。
   Future<String> verifyOtp({
     required String verificationId,
     required String code,
     String? phone,
     String? email,
   }) async {
-    final body = <String, dynamic>{
-      'verification_id': verificationId,
-      'verification_code': code,
-    };
-    if (phone != null && phone.isNotEmpty) body['phone_number'] = '+86 $phone';
-    if (email != null && email.isNotEmpty) body['email'] = email;
     final r = await _post(
       Uri.parse(
           '${CloudConfig.endpoint}${CloudConfig.authPath}/verification/verify'),
       headers: _headers(),
-      body: jsonEncode(body),
+      body: jsonEncode(
+          {'verification_id': verificationId, 'verification_code': code}),
     );
     if (r.statusCode != 200) _fail(r);
     final data = jsonDecode(r.body) as Map<String, dynamic>;
@@ -243,7 +282,9 @@ class CloudClient {
     String? email,
   }) async {
     final body = <String, dynamic>{'verification_token': verificationToken};
-    if (phone != null && phone.isNotEmpty) body['phone_number'] = '+86 $phone';
+    if (phone != null && phone.isNotEmpty) {
+      body['phone_number'] = normalizePhone(phone);
+    }
     if (email != null && email.isNotEmpty) body['email'] = email;
     final r = await _post(
       Uri.parse('${CloudConfig.endpoint}${CloudConfig.authPath}/signup'),
@@ -295,9 +336,12 @@ class CloudClient {
 
   Session _parseSession(String body) {
     final data = jsonDecode(body) as Map<String, dynamic>;
+    // 与云端 SDK 一致：expires_in 缺失时记为 0（立即视为需要刷新），
+    // 由上层 ensureFreshToken 刷新后再使用——直接用首次签发的令牌
+    // 会被数据平面拒绝（401 invalid_grant）。
     final expiresIn = (data['expires_in'] is num)
         ? (data['expires_in'] as num).toInt()
-        : 3600;
+        : 0;
     final nested = data['user'];
     final userJson =
         nested is Map ? nested.cast<String, dynamic>() : data;

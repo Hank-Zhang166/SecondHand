@@ -1,5 +1,5 @@
 -- SecondHand（清华二手）云端数据结构
--- 在 WorkBuddy 云数据库执行，幂等可重复执行
+-- 在云数据库执行，幂等可重复执行
 
 DO $$
 BEGIN
@@ -13,9 +13,11 @@ BEGIN
     student_id TEXT,
     department TEXT,
     thu_email_verified BOOLEAN NOT NULL DEFAULT false,
+    phone TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );
+  ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone TEXT;
 
   -- ========== products 二手商品 ==========
   CREATE TABLE IF NOT EXISTS public.products (

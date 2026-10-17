@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../utils/format.dart';
 import '../widgets/product_image.dart';
+import 'bind_phone_page.dart';
 import 'favorites_page.dart';
 import 'history_page.dart';
 import 'my_orders_page.dart';
@@ -175,6 +176,18 @@ class _ProfilePageState extends State<ProfilePage> {
                               : const Color(0xFFE65100),
                         ),
                       ),
+                      const SizedBox(height: 2),
+                      Text(
+                        profile?.phoneBound == true
+                            ? '已绑定手机号 ${Format.maskPhone(profile!.phone)}'
+                            : '未绑定手机号（绑定后可用手机号登录）',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: profile?.phoneBound == true
+                              ? const Color(0xFF9E9E9E)
+                              : const Color(0xFFE65100),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -266,6 +279,19 @@ class _ProfilePageState extends State<ProfilePage> {
               },
             ),
             _MenuItem(
+              icon: Icons.phone_android,
+              title: '绑定手机号',
+              subtitle: profile?.phoneBound == true
+                  ? '已绑定，点击更换'
+                  : '绑定后可用手机号登录',
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BindPhonePage()),
+                );
+                await auth.reloadProfile();
+              },
+            ),
+            _MenuItem(
               icon: Icons.shield_outlined,
               title: '用户须知与防骗指南',
               onTap: _showNotice,
@@ -283,7 +309,7 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 30),
           const Center(
             child: Text(
-              '清华二手 v1.0.0 · 仅限校内线下交易',
+              '清华二手 v1.0.2 · 仅限校内线下交易',
               style: TextStyle(fontSize: 10, color: Color(0xFFBDBDBD)),
             ),
           ),
@@ -299,19 +325,26 @@ class _ProfilePageState extends State<ProfilePage> {
       child: Column(
         children: [
           for (var i = 0; i < items.length; i++) ...[
-            ListTile(
-              leading: Icon(items[i].icon,
-                  size: 20,
-                  color: items[i].titleColor ?? const Color(0xFF616161)),
-              title: Text(
-                items[i].title,
-                style: TextStyle(
-                    fontSize: 14, color: items[i].titleColor),
+              ListTile(
+                leading: Icon(items[i].icon,
+                    size: 20,
+                    color: items[i].titleColor ?? const Color(0xFF616161)),
+                title: Text(
+                  items[i].title,
+                  style: TextStyle(
+                      fontSize: 14, color: items[i].titleColor),
+                ),
+                subtitle: items[i].subtitle == null
+                    ? null
+                    : Text(
+                        items[i].subtitle!,
+                        style: const TextStyle(
+                            fontSize: 11, color: Color(0xFF9E9E9E)),
+                      ),
+                trailing: const Icon(Icons.chevron_right,
+                    size: 18, color: Color(0xFFBDBDBD)),
+                onTap: items[i].onTap,
               ),
-              trailing: const Icon(Icons.chevron_right,
-                  size: 18, color: Color(0xFFBDBDBD)),
-              onTap: items[i].onTap,
-            ),
             if (i != items.length - 1)
               const Divider(height: 1, indent: 52, color: Color(0xFFF5F5F5)),
           ],
@@ -327,10 +360,12 @@ class _MenuItem {
     required this.title,
     required this.onTap,
     this.titleColor,
+    this.subtitle,
   });
 
   final IconData icon;
   final String title;
   final VoidCallback onTap;
   final Color? titleColor;
+  final String? subtitle;
 }

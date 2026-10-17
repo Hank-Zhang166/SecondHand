@@ -4,7 +4,7 @@
 交易仅限**校内线下面对面**完成：不实现快递物流、不实现在线支付、不涉及资金流。
 
 - 前端：Flutter 3.47（Dart ^3.13），Material 3 界面
-- 后端：WorkBuddy Cloud Service（Serverless：Auth / Database / Storage），App 通过 REST API 直连
+- 后端：云服务（Serverless：Auth / Database / Storage），App 通过 REST API 直连
 - 数据安全：PostgreSQL RLS（行级安全），用户只能读写自己的数据；商品公开可读、仅作者可写
 
 ---
@@ -12,9 +12,10 @@
 ## 一、功能清单
 
 ### 1. 注册登录
-- 手机号（11 位，自动转 +86）或邮箱 + 短信/邮件验证码，**登录注册一体化**：新号码验证通过后自动创建账号
-- 60 秒验证码倒计时；`is_user` 自动区分新老用户并给出提示
-- 会话持久化（SharedPreferences），App 重启自动恢复；access token 过期自动 refresh；401 自动退出
+- **注册仅支持清华邮箱**：输入邮箱 + 验证码即可，**登录注册一体化**——未注册的邮箱验证通过后自动创建账号并直接进入应用，绝不出现“注册成功，请登录”或要求重复输入的中断
+- 手机号 + 短信验证码作为**第二种登录方式**（登录页次级入口）：仅允许登录已注册账号，不创建新账号；需先用邮箱注册，并在「我的 → 绑定手机号」完成绑定
+- 60 秒验证码倒计时；验证码错误、账号不存在/已存在等场景自动走兜底分支（signin ↔ signup 互为兜底）
+- **30 天账号记忆**：同一设备登录成功后 30 天内无需再次登录；启动时自动恢复会话、静默刷新，并用服务端校验本地会话（失效则静默清除，不弹任何英文错误）
 - 《用户须知》弹窗（交易规则 + 防骗提示），需勾选同意才能继续
 
 ### 2. 首页 · 浏览检索
@@ -48,6 +49,7 @@
 - 我的收藏：云端同步的收藏夹（可取消）
 - 浏览历史：本地记录（最多 100 条）、一键清空
 - 编辑资料：头像上传、昵称、学号（9-10 位校验）、院系；清华邮箱认证标识
+- **绑定手机号**：短信验证码验证通过后写入 profiles.phone，绑定后可用手机号登录，并展示脱敏手机号
 - 用户须知与防骗指南、退出登录
 
 ### 7. 商品状态机
@@ -76,7 +78,7 @@
 └────────────────────────────────────┬─────────────────────────────────────────┘
                                      │ HTTPS（PostgREST 风格 REST）
 ┌────────────────────────────────────▼─────────────────────────────────────────┐
-│ WorkBuddy Cloud Service                                                      │
+│ 云服务（Serverless：Auth / Database / Storage）                                │
 │  /.cloud/auth/v1/**        验证码/登录/注册/刷新/user/me                       │
 │  /.cloud/database/rest/**  PostgreSQL（RLS 数据隔离）                         │
 │  /.cloud/storage/**        runtime 桶：上传 /object/<bucket>/<path>            │
@@ -187,8 +189,8 @@ flutter build apk --release
 > 若使用模拟器测试，建议用 x86_64 镜像；`flutter build apk --split-per-abi` 可进一步减小包体。
 
 ### 首次使用
-1. 安装 APK，输入手机号或清华邮箱获取验证码（新用户自动注册）
-2. 建议「我的 → 编辑资料」补全昵称 / 学号 / 院系
+1. 安装 APK，输入清华邮箱获取验证码（未注册邮箱自动创建账号并直接进入）
+2. 建议「我的 → 编辑资料」补全昵称 / 学号 / 院系；「我的 → 绑定手机号」绑定后可用手机号登录
 3. 首页浏览或搜索 → 详情页「我想要」→ 站内私信协商时间地点 → 校内见面交易
 
 ### 启动流程与白屏排障（重要）
@@ -199,12 +201,36 @@ flutter build apk --release
 2. `AppBootstrap` 先渲染品牌启动页（含当前步骤文案），再在首帧后初始化：
    - 本地存储（SharedPreferences，8 秒超时，失败自动降级为内存存储）
    - 登录态恢复（`auth.restore()`，10 秒超时，超时视为未登录继续进入）
+   - 服务端校验本地会话（`user/me`，失效则静默清除，不弹错误）
 3. `ErrorWidget.builder` 在 release 下也渲染**可见错误页**（默认空白是白屏根因之一）
 4. `AndroidManifest.xml` 中 `EnableImpeller=false`：回退 Skia 渲染，规避部分机型 Impeller 白屏
 5. 云端 HTTP 全部带 15 秒超时，弱网不会无限等待
+6. 原生启动背景已改为清华紫 + 品牌 Logo（`drawable/launch_background.xml`），彻底消除白色闪屏
 
 遇到异常启动时：白屏且无文字 → 多为原生渲染问题（确认已用带 `EnableImpeller=false` 的新包）；
 卡在启动页某一步 → 按步骤文案定位（本地存储/网络）；显示错误页 → 页面上有具体异常信息，请截图反馈。
+
+### 验证码邮件去除平台 Logo（邮箱模板定制）
+
+验证码邮件由云服务的邮件通道下发，默认模板带有平台品牌 Logo。去除方法：
+进入**云服务管理面板 → 应用「清华二手」→ 登录方式 / 用户认证 → 邮箱 → 邮件模板**，
+将模板模式改为**自定义**，粘贴以下内容（必须保留 `{{.VerificationCode}}` 变量）：
+
+```html
+<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F7F5F0;border-radius:12px">
+  <div style="text-align:center;margin-bottom:16px">
+    <div style="display:inline-block;width:56px;height:56px;line-height:56px;background:#660874;color:#ffffff;border-radius:14px;font-size:28px">🎓</div>
+    <h2 style="color:#660874;margin:8px 0 0">清华二手</h2>
+    <p style="color:#9e9e9e;font-size:12px;margin:4px 0 0">校园二手物品 · 校内面对面交易</p>
+  </div>
+  <p style="font-size:14px;color:#333333">你的验证码是：</p>
+  <p style="font-size:32px;font-weight:bold;color:#660874;letter-spacing:6px;text-align:center;margin:12px 0">{{.VerificationCode}}</p>
+  <p style="font-size:12px;color:#999999">验证码 10 分钟内有效，请勿转发给他人。如非本人操作，请忽略本邮件。</p>
+</div>
+```
+
+中文（registerSignInZhCN）与英文（registerSignInEnUS）模板可分别设置；保存后立即生效，
+新发送的验证码邮件即为清华二手品牌样式，不再带任何平台 Logo。
 
 ---
 
@@ -214,4 +240,9 @@ flutter build apk --release
 - **消息无推送**：云端无推送通道，未读采用打开 App 时 + 30s 轮询 + 打开会话置底已读
 - **图片压缩在前端**：多选时按质量 85 / 1400px 压缩，未引入额外原生图片库
 - **内容安全为客户端第一道防线**：本地词库拦截 + 举报表（`reports`）留痕，生产环境应叠加服务端审核
+- **手机号登录是独立身份**：云端认证平台未开放「手机号绑定到已有账号」（provider bind）能力，
+  因此手机号渠道只用于登录（不注册），绑定手机号用于个人资料展示；若需手机号直接登录同一账号，
+  需要平台开放账号绑定能力或自建身份映射服务
+- **30 天免登录依赖刷新令牌有效期**：本地按 30 天窗口保持会话并自动刷新；
+  若云端刷新令牌先行失效，用户需重新登录（此时为静默登出，无错误弹窗）
 - **release 使用 debug 签名**：便于直接安装体验；正式发布请替换为自己的签名配置

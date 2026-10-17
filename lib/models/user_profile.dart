@@ -7,6 +7,7 @@ class UserProfile {
   final String studentId;
   final String department;
   final bool thuEmailVerified;
+  final String phone;
 
   UserProfile({
     required this.ownerId,
@@ -16,6 +17,7 @@ class UserProfile {
     required this.studentId,
     required this.department,
     required this.thuEmailVerified,
+    this.phone = '',
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> j) => UserProfile(
@@ -28,9 +30,13 @@ class UserProfile {
         studentId: '${j['student_id'] ?? ''}',
         department: '${j['department'] ?? ''}',
         thuEmailVerified: j['thu_email_verified'] == true,
+        phone: '${j['phone'] ?? ''}',
       );
 
   /// 展示名：昵称优先
   String get displayName =>
       nickname.trim().isNotEmpty ? nickname : '清华同学';
+
+  /// 是否已绑定手机号
+  bool get phoneBound => phone.trim().isNotEmpty;
 }

@@ -9,7 +9,12 @@ import '../services/cloud_client.dart';
 import '../state/app_state.dart';
 import '../utils/validators.dart';
 
-/// 登录 / 注册页：手机号或清华邮箱 + 验证码（一体化登录注册）
+/// 登录 / 注册页
+///
+/// 注册仅支持清华邮箱（验证码一体化：输入邮箱 + 验证码即可，
+/// 未注册邮箱自动创建账号，绝不再跳"注册成功请登录"）。
+/// 手机号 + 短信验证码作为第二种登录方式（需先用邮箱注册并在
+/// 「我的」页面绑定手机号），不开放手机号注册。
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -17,19 +22,25 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
+/// 登录渠道：邮箱（主）/ 手机号（次）
+enum _LoginChannel { email, phone }
+
 class _LoginPageState extends State<LoginPage> {
-  int _tab = 0; // 0 手机号 / 1 邮箱
+  _LoginChannel _channel = _LoginChannel.email;
   final _accountController = TextEditingController();
   final _codeController = TextEditingController();
 
   String? _verificationId;
   bool _isExistingUser = false;
-  bool _codeSent = false;
   int _countdown = 0;
   Timer? _timer;
   bool _sending = false;
   bool _submitting = false;
   bool _agreed = false;
+
+  bool get _isEmail => _channel == _LoginChannel.email;
+
+  String get _account => _accountController.text.trim();
 
   @override
   void dispose() {
@@ -38,10 +49,6 @@ class _LoginPageState extends State<LoginPage> {
     _codeController.dispose();
     super.dispose();
   }
-
-  bool get _isEmail => _tab == 1;
-
-  String get _account => _accountController.text.trim();
 
   String? _validateAccount() {
     final v = _account;
@@ -52,6 +59,22 @@ class _LoginPageState extends State<LoginPage> {
       return '请输入正确的 11 位手机号';
     }
     return null;
+  }
+
+  void _resetForm() {
+    _accountController.clear();
+    _codeController.clear();
+    _verificationId = null;
+    _countdown = 0;
+    _timer?.cancel();
+  }
+
+  void _switchChannel(_LoginChannel channel) {
+    if (_channel == channel) return;
+    setState(() {
+      _channel = channel;
+      _resetForm();
+    });
   }
 
   Future<void> _sendCode() async {
@@ -74,7 +97,6 @@ class _LoginPageState extends State<LoginPage> {
       setState(() {
         _verificationId = challenge.verificationId;
         _isExistingUser = challenge.isExistingUser;
-        _codeSent = true;
         _countdown = 60;
       });
       _timer?.cancel();
@@ -85,7 +107,7 @@ class _LoginPageState extends State<LoginPage> {
           if (_countdown == 0) _timer?.cancel();
         });
       });
-      _toast('验证码已发送${_isExistingUser ? '，欢迎回来' : '，验证后将自动注册'}');
+      _toast('验证码已发送');
     } on CloudException catch (e) {
       _toast(e.message);
     } catch (_) {
@@ -116,13 +138,25 @@ class _LoginPageState extends State<LoginPage> {
     }
     setState(() => _submitting = true);
     try {
-      await context.read<AuthService>().loginWithOtp(
-            phoneOrEmail: _account,
-            isEmail: _isEmail,
-            verificationId: _verificationId!,
-            isExistingUser: _isExistingUser,
-            code: code,
-          );
+      final auth = context.read<AuthService>();
+      if (_isEmail) {
+        // 邮箱：注册 + 登录一体化，验证通过直接进入应用
+        await auth.loginWithOtp(
+          phoneOrEmail: _account,
+          isEmail: true,
+          verificationId: _verificationId!,
+          isExistingUser: _isExistingUser,
+          code: code,
+        );
+      } else {
+        // 手机号：仅作为第二种登录方式，不创建新账号
+        await auth.loginWithPhoneOtp(
+          phone: _account,
+          verificationId: _verificationId!,
+          isExistingUser: _isExistingUser,
+          code: code,
+        );
+      }
       // 登录成功后 _RootGate 会自动切换到主框架
     } on CloudException catch (e) {
       _toast(e.message);
@@ -196,26 +230,13 @@ class _LoginPageState extends State<LoginPage> {
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  '校园二手物品 · 校内面对面交易',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF9E9E9E)),
+                Text(
+                  _isEmail ? '校园二手物品 · 校内面对面交易' : '手机号登录',
+                  style: const TextStyle(
+                      fontSize: 13, color: Color(0xFF9E9E9E)),
                 ),
                 const SizedBox(height: 32),
-                // 账号类型 Tab
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEDE7F1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  padding: const EdgeInsets.all(4),
-                  child: Row(
-                    children: [
-                      _tabButton('手机号', 0),
-                      _tabButton('清华邮箱', 1),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
+                // 账号输入
                 TextField(
                   controller: _accountController,
                   keyboardType: _isEmail
@@ -228,7 +249,8 @@ class _LoginPageState extends State<LoginPage> {
                   ],
                   decoration: InputDecoration(
                     hintText: _isEmail ? '请输入清华邮箱' : '请输入 11 位手机号',
-                    prefixIcon: Icon(_isEmail ? Icons.mail_outline : Icons.phone_android),
+                    prefixIcon: Icon(
+                        _isEmail ? Icons.mail_outline : Icons.phone_android),
                   ),
                   onChanged: (_) => setState(() {}),
                 ),
@@ -245,6 +267,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ],
                 const SizedBox(height: 12),
+                // 验证码
                 Row(
                   children: [
                     Expanded(
@@ -265,7 +288,8 @@ class _LoginPageState extends State<LoginPage> {
                     SizedBox(
                       width: 108,
                       child: OutlinedButton(
-                        onPressed: (_sending || _countdown > 0) ? null : _sendCode,
+                        onPressed:
+                            (_sending || _countdown > 0) ? null : _sendCode,
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           side: const BorderSide(color: Color(0xFF660874)),
@@ -333,54 +357,30 @@ class _LoginPageState extends State<LoginPage> {
                             color: Colors.white,
                           ),
                         )
-                      : Text(_isExistingUser && _codeSent ? '登录' : '登录 / 注册'),
+                      : Text(_isEmail ? '登录 / 注册' : '登录'),
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  _codeSent
-                      ? (_isExistingUser
-                          ? '该账号已注册，验证后直接登录'
-                          : '首次使用，验证通过后将自动创建账号')
-                      : '未注册的手机号/邮箱验证通过后会自动创建账号',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF9E9E9E)),
+                  _isEmail
+                      ? '未注册的邮箱验证通过后将自动创建账号，无需单独注册'
+                      : '手机号登录需先用邮箱注册，并在「我的」页面绑定手机号',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 11, color: Color(0xFF9E9E9E)),
+                ),
+                const SizedBox(height: 8),
+                // 渠道切换（次要入口）
+                TextButton(
+                  onPressed: () => _switchChannel(_isEmail
+                      ? _LoginChannel.phone
+                      : _LoginChannel.email),
+                  child: Text(
+                    _isEmail ? '使用手机号登录' : '使用邮箱登录 / 注册',
+                    style: const TextStyle(
+                        fontSize: 13, color: Color(0xFF660874)),
+                  ),
                 ),
               ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _tabButton(String label, int index) {
-    final selected = _tab == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          if (_tab == index) return;
-          setState(() {
-            _tab = index;
-            _accountController.clear();
-            _codeController.clear();
-            _verificationId = null;
-            _codeSent = false;
-            _countdown = 0;
-            _timer?.cancel();
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: selected ? const Color(0xFF660874) : const Color(0xFF757575),
             ),
           ),
         ),

@@ -1,5 +1,6 @@
 // 基础单元测试：数据校验与内容安全工具
 import 'package:flutter_test/flutter_test.dart';
+import 'package:secondhand/services/cloud_client.dart';
 import 'package:secondhand/utils/content_filter.dart';
 import 'package:secondhand/utils/validators.dart';
 
@@ -34,6 +35,21 @@ void main() {
       final tooLate = DateTime.now().add(const Duration(days: 91));
       expect(Validators.isDeadline(tomorrow), true);
       expect(Validators.isDeadline(tooLate), false);
+    });
+  });
+
+  group('CloudClient.normalizePhone', () {
+    test('11 位大陆号码转 +86 格式', () {
+      expect(CloudClient.normalizePhone('13800138000'), '+86 13800138000');
+    });
+
+    test('带 86 / 0086 前缀先剥离', () {
+      expect(CloudClient.normalizePhone('8613800138000'), '+86 13800138000');
+      expect(CloudClient.normalizePhone('008613800138000'), '+86 13800138000');
+    });
+
+    test('非大陆号码原样返回', () {
+      expect(CloudClient.normalizePhone('+852 12345678'), '+852 12345678');
     });
   });
 

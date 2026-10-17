@@ -205,6 +205,14 @@ class _AppBootstrapState extends State<AppBootstrap> {
             const Duration(seconds: 10),
             onTimeout: () {}, // 超时视为未登录，不阻断启动
           );
+      // 服务端校验本地会话：失效则静默清除（不弹任何错误），
+      // 避免进入应用后请求 401 再被弹回登录页
+      if (services.auth.signedIn) {
+        await services.auth.validateSession().timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => true, // 网络超时时保留会话，后续请求自会处理
+            );
+      }
       services.history.load();
 
       if (!mounted) return;

@@ -1,6 +1,6 @@
 /// 云端配置
 ///
-/// 以下三个值来自 WorkBuddy 云服务激活后返回的 publicConfig，
+/// 以下三个值来自云服务激活后返回的 publicConfig，
 /// 是唯一可以安全写入 App 前端的公开配置：
 /// - endpoint：数据平面地址（认证 / 数据库 / 存储都走它）
 /// - publishableKey：应用标识，本身不带任何权限，由服务端校验
