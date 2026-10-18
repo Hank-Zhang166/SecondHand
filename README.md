@@ -49,7 +49,7 @@
 - 我的收藏：云端同步的收藏夹（可取消）
 - 浏览历史：本地记录（最多 100 条）、一键清空
 - 编辑资料：头像上传、昵称、学号（9-10 位校验）、院系；清华邮箱认证标识
-- **绑定手机号**：短信验证码验证通过后写入 profiles.phone，绑定后可用手机号登录，并展示脱敏手机号
+- **联系手机号**：保存到 profiles.phone（Supabase 免费档默认不含短信服务商，暂不提供手机号登录；手机号仅作为站内联系信息展示给买家）
 - 用户须知与防骗指南、退出登录
 
 ### 7. 商品状态机
@@ -94,7 +94,7 @@
 
 ## 三、云端数据结构
 
-7 张表，全部启用 RLS，DDL 见 [`docs/schema.sql`](docs/schema.sql)（幂等，可重复执行）。
+7 张表，全部启用 RLS，Supabase 版 DDL 见 [`docs/schema_supabase.sql`](docs/schema_supabase.sql)（在 Supabase 控制台 SQL Editor 一次性执行，幂等可重复）。
 
 | 表 | 说明 | 关键字段 | RLS 策略 |
 |---|---|---|---|
@@ -106,7 +106,7 @@
 | `favorites` | 收藏 | owner_id product_id（唯一） | 仅本人 |
 | `reports` | 举报 | owner_id target_type target_id reason status | 仅本人创建 |
 
-- `owner_id` / `sender_id` 等由数据库 `DEFAULT auth.uid()` 自动填充，客户端不传
+- `owner_id` / `sender_id` 等由数据库 `DEFAULT auth.uid()::text` 自动填充，客户端不传（Supabase 的 `auth.uid()` 返回 uuid，转 text 后存入 TEXT 列）
 - 共 10 个索引（信息流排序、意向查询、消息查询、收藏唯一约束等）
 - 商品状态：`on_sale` / `reserved` / `completed` / `off_shelf`
 - 意向状态：`pending` / `accepted` / `rejected` / `completed` / `cancelled`

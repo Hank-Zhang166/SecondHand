@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'config/cloud_config.dart';
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
 import 'pages/messages_page.dart';
@@ -194,11 +196,31 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
   Future<void> _init() async {
     try {
+      // ---------- 步骤 0：后端配置检查 ----------
+      if (!CloudConfig.configured) {
+        if (mounted) {
+          setState(() {
+            _failed = true;
+            _error = '后端尚未配置。\n\n'
+                '请在 lib/config/cloud_config.dart 中填入 Supabase 项目的 '
+                'supabaseUrl 与 supabaseAnonKey（获取方式见 README「云端配置」章节）。';
+          });
+        }
+        return;
+      }
+
       // ---------- 步骤 1：本地存储 ----------
       if (mounted) setState(() => _step = '正在初始化本地存储…');
       final prefs = await _openPrefs();
 
-      // ---------- 步骤 2：恢复登录状态 ----------
+      // ---------- 步骤 2：初始化 Supabase ----------
+      if (mounted) setState(() => _step = '正在连接云端服务…');
+      await Supabase.initialize(
+        url: CloudConfig.supabaseUrl,
+        publishableKey: CloudConfig.supabaseAnonKey,
+      );
+
+      // ---------- 步骤 3：恢复登录状态 ----------
       if (mounted) setState(() => _step = '正在恢复登录状态…');
       final services = AppServices(prefs);
       await services.auth.restore().timeout(

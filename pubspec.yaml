@@ -1,7 +1,7 @@
 name: secondhand
 description: "清华大学校内二手物品交易平台（SecondHand）— Flutter Android 客户端"
 publish_to: 'none'
-version: 1.0.2+3
+version: 1.0.3+4
 
 environment:
   sdk: ^3.13.5
@@ -16,6 +16,7 @@ dependencies:
   cached_network_image: ^3.4.1
   provider: ^6.1.2
   intl: ^0.19.0
+  supabase_flutter: ^2.18.3
 
 dev_dependencies:
   flutter_test:

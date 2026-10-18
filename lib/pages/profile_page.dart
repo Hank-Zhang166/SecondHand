@@ -179,8 +179,8 @@ class _ProfilePageState extends State<ProfilePage> {
                       const SizedBox(height: 2),
                       Text(
                         profile?.phoneBound == true
-                            ? '已绑定手机号 ${Format.maskPhone(profile!.phone)}'
-                            : '未绑定手机号（绑定后可用手机号登录）',
+                            ? '已保存手机号 ${Format.maskPhone(profile!.phone)}'
+                            : '未保存手机号（保存后买家可联系你）',
                         style: TextStyle(
                           fontSize: 11,
                           color: profile?.phoneBound == true
@@ -280,10 +280,10 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             _MenuItem(
               icon: Icons.phone_android,
-              title: '绑定手机号',
+              title: '联系手机号',
               subtitle: profile?.phoneBound == true
                   ? '已绑定，点击更换'
-                  : '绑定后可用手机号登录',
+                  : '保存后展示给买家联系',
               onTap: () async {
                 await Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const BindPhonePage()),
@@ -309,7 +309,7 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 30),
           const Center(
             child: Text(
-              '清华二手 v1.0.2 · 仅限校内线下交易',
+              '清华二手 v1.0.3 · 仅限校内线下交易',
               style: TextStyle(fontSize: 10, color: Color(0xFFBDBDBD)),
             ),
           ),
