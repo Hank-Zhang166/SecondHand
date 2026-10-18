@@ -70,25 +70,28 @@
 ```
 ┌─────────────────────────── Android APK (Flutter) ───────────────────────────┐
 │ pages/     登录 首页 详情 发布 消息 聊天 我的发布 意向管理 订单 收藏 历史 我的  │
-│ widgets/   商品卡片 状态徽章 云图(签名URL) 空状态                              │
-│ services/  CloudClient(HTTP契约) Auth Product Order Chat Favorite History    │
+│ widgets/   商品卡片 状态徽章 云图(下载URL) 空状态                              │
+│ services/  CloudClient(Supabase适配层) Auth Product Order Chat Favorite ...   │
 │ models/    Product OrderIntent Conversation ChatMessage UserProfile Enums    │
-│ state/     AppServices(共享单 CloudClient)                                    │
-│ utils/     Validators ContentFilter Format                                    │
+│ state/     AppServices(共享单 SupabaseClient)                                │
+│ utils/     Validators ContentFilter Format                                  │
 └────────────────────────────────────┬─────────────────────────────────────────┘
-                                     │ HTTPS（PostgREST 风格 REST）
+                                     │ supabase_flutter 官方 SDK（HTTPS）
 ┌────────────────────────────────────▼─────────────────────────────────────────┐
-│ 云服务（Serverless：Auth / Database / Storage）                                │
-│  /.cloud/auth/v1/**        验证码/登录/注册/刷新/user/me                       │
-│  /.cloud/database/rest/**  PostgreSQL（RLS 数据隔离）                         │
-│  /.cloud/storage/**        runtime 桶：上传 /object/<bucket>/<path>            │
-│                            签名下载 URL /object/sign/<bucket>                │
+│ Supabase（GitHub 80k★ 开源 BaaS：Auth / Postgres / Storage）                  │
+│  Auth       邮箱 OTP：signInWithOtp 发 6 位码 → verifyOTP                     │
+│             （验证通过即完成注册+登录，新用户自动建号）                        │
+│  PostgREST  PostgreSQL（RLS 数据隔离，auth.uid() 自动填充 owner_id）          │
+│  Storage    runtime 桶：上传 / 下载 URL                                       │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- 状态管理：Provider（`AuthService`/`HistoryStore` 为 ChangeNotifier）
-- 图片加载：`cached_network_image`，存储路径 → 签名 URL（23h 内存缓存，按需批量换取）
+- 状态管理：Provider（AuthService / HistoryStore 为 ChangeNotifier）
+- 图片加载：cached_network_image，存储路径 → 下载 URL（公开桶 / 签名 URL）
 - 无本地数据库依赖，云端为唯一数据源；浏览历史为纯本地
+- **为什么是 Supabase（v1.0.3 起）**：原云端认证平台的邮箱 OTP 令牌体系存在平台级故障
+  （verify 端签发的合法验证令牌被自家 signup/signin 一致拒绝，新旧两个环境用官方 SDK
+  标准契约实测复现），故整体迁移至 Supabase；App 内 8 个业务 service 经适配层零改动接入
 
 ---
 
@@ -111,17 +114,24 @@
 - 商品状态：`on_sale` / `reserved` / `completed` / `off_shelf`
 - 意向状态：`pending` / `accepted` / `rejected` / `completed` / `cancelled`
 
-### 云端连接配置
+### 云端连接配置（Supabase）
 
-`lib/config/cloud_config.dart`：
+`lib/config/cloud_config.dart` 中两个值来自 Supabase 控制台 **Project Settings → API**：
 
 ```dart
-endpoint       = https://thu-secondhand.app.workbuddy.host
-publishableKey = wbpk_Rlao24qmxVBqxkoexLCoMU_1X14KcczjPblWcTsaTXfbc54ez0xeEoc
-storageBucket  = runtime
+supabaseUrl    = https://xxxx.supabase.co   // Project URL
+supabaseAnonKey = eyJ...                    // anon public key（可暴露在前端，权限由 RLS 管控）
+storageBucket  = runtime                    // 存储桶（建表脚本自动创建）
 ```
 
-如需指向自己的云端环境，修改该文件即可（其余代码无硬编码）。
+**接入四步**（一次性，约 10 分钟）：
+
+1. 打开 <https://supabase.com>，用 GitHub 账号登录
+2. **New project**：Name 填 `thu-secondhand`，Region 选 **Singapore（ap-southeast-1，离国内最近）**，Database Password 点 Generate 后保存
+3. 项目就绪后进入 **SQL Editor → New query**，粘贴并执行 [`docs/schema_supabase.sql`](docs/schema_supabase.sql)（建 7 表 + RLS + 索引 + 存储桶，幂等可重复）
+4. **Project Settings → API** 复制 **Project URL** 与 **anon public** key，填入 `lib/config/cloud_config.dart`，重新构建即可
+
+未配置时 App 启动会显示明确的后端配置引导页，不会静默失败。
 
 ---
 
@@ -132,10 +142,10 @@ SecondHand/
 ├── lib/
 │   ├── main.dart                 入口：SharedPreferences + AppServices + Provider
 │   ├── app.dart                  MaterialApp 主题、登录态守卫、底部导航框架
-│   ├── config/cloud_config.dart 云端 endpoint / publishableKey / 路径常量
+│   ├── config/cloud_config.dart Supabase URL / anon key / 存储桶常量
 │   ├── state/app_state.dart      全局服务容器（共享单 CloudClient）
 │   ├── services/                 云端 HTTP 客户端与各业务服务
-│   │   ├── cloud_client.dart     认证 / PostgREST / 存储 三段 API 封装
+│   │   ├── cloud_client.dart     Supabase 适配层（Auth / PostgREST / Storage）
 │   │   ├── auth_service.dart     会话持久化、验证码登录、资料
 │   │   ├── product_service.dart  信息流 / 搜索 / 发布 / 状态管理
 │   │   ├── order_service.dart    购买意向
@@ -148,8 +158,9 @@ SecondHand/
 │   ├── widgets/                  ProductImage / ProductCard / StatusBadge / EmptyState
 │   └── utils/                    Validators / ContentFilter / Format
 ├── android/                      Android 工程（com.thu.secondhand）
-├── docs/schema.sql               云端 7 表 DDL + RLS + 索引
-└── test/widget_test.dart         校验与内容安全单元测试（8 例）
+├── docs/schema.sql               WorkBuddy 云端版 7 表 DDL（历史归档）
+├── docs/schema_supabase.sql       Supabase 版 7 表 DDL + RLS + 索引（当前使用）
+└── test/widget_test.dart         校验与内容安全单元测试（11 例）
 ```
 
 ---
@@ -174,14 +185,14 @@ flutter run
 ### 代码检查与测试
 ```bash
 flutter analyze     # 静态分析（当前 0 issue）
-flutter test        # 单元测试（8 例全过）
+flutter test        # 单元测试（11 例全过）
 ```
 
 ### 打包可安装 APK
 ```bash
 flutter build apk --release
 ```
-产物：`build/app/outputs/flutter-apk/app-release.apk`（约 52.8MB，通用包含全部 ABI，debug 签名可直接安装；
+产物：`build/app/outputs/flutter-apk/app-release.apk`（约 54.4MB，通用包含全部 ABI，debug 签名可直接安装；
 也可从 GitHub Releases 直接下载，或执行 `flutter build apk --split-per-abi` 得到单 ABI 约 15-20MB 的包）。
 
 > 国内网络提示：`android/build.gradle.kts` 与 `settings.gradle.kts` 已配置阿里云 Maven 镜像，
@@ -190,7 +201,7 @@ flutter build apk --release
 
 ### 首次使用
 1. 安装 APK，输入清华邮箱获取验证码（未注册邮箱自动创建账号并直接进入）
-2. 建议「我的 → 编辑资料」补全昵称 / 学号 / 院系；「我的 → 绑定手机号」绑定后可用手机号登录
+2. 建议「我的 → 编辑资料」补全昵称 / 学号 / 院系；「我的 → 联系手机号」保存后展示在商品详情页
 3. 首页浏览或搜索 → 详情页「我想要」→ 站内私信协商时间地点 → 校内见面交易
 
 ### 启动流程与白屏排障（重要）
@@ -199,22 +210,23 @@ flutter build apk --release
 
 1. `main()` 同步 `runApp`：不 await 任何插件/网络调用，保证首帧立即可见
 2. `AppBootstrap` 先渲染品牌启动页（含当前步骤文案），再在首帧后初始化：
+   - 后端配置检查（未配置 Supabase 时显示配置引导页）
    - 本地存储（SharedPreferences，8 秒超时，失败自动降级为内存存储）
    - 登录态恢复（`auth.restore()`，10 秒超时，超时视为未登录继续进入）
-   - 服务端校验本地会话（`user/me`，失效则静默清除，不弹错误）
+   - 服务端校验本地会话（查询 profiles 实测令牌，失效则静默清除，不弹错误）
 3. `ErrorWidget.builder` 在 release 下也渲染**可见错误页**（默认空白是白屏根因之一）
 4. `AndroidManifest.xml` 中 `EnableImpeller=false`：回退 Skia 渲染，规避部分机型 Impeller 白屏
-5. 云端 HTTP 全部带 15 秒超时，弱网不会无限等待
+5. 云端调用均设超时与失败降级，弱网不会无限等待
 6. 原生启动背景已改为清华紫 + 品牌 Logo（`drawable/launch_background.xml`），彻底消除白色闪屏
 
 遇到异常启动时：白屏且无文字 → 多为原生渲染问题（确认已用带 `EnableImpeller=false` 的新包）；
 卡在启动页某一步 → 按步骤文案定位（本地存储/网络）；显示错误页 → 页面上有具体异常信息，请截图反馈。
 
-### 验证码邮件去除平台 Logo（邮箱模板定制）
+### 验证码邮件定制（去除平台 Logo）
 
-验证码邮件由云服务的邮件通道下发，默认模板带有平台品牌 Logo。去除方法：
-进入**云服务管理面板 → 应用「清华二手」→ 登录方式 / 用户认证 → 邮箱 → 邮件模板**，
-将模板模式改为**自定义**，粘贴以下内容（必须保留 `{{.VerificationCode}}` 变量）：
+Supabase 默认邮件模板带有 Supabase 品牌标识。定制方法：
+进入 Supabase 控制台 **Authentication → Email Templates → Magic Link**，
+粘贴以下内容（必须保留 `{{ .Token }}` 变量，即 6 位验证码）：
 
 ```html
 <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F7F5F0;border-radius:12px">
@@ -224,13 +236,13 @@ flutter build apk --release
     <p style="color:#9e9e9e;font-size:12px;margin:4px 0 0">校园二手物品 · 校内面对面交易</p>
   </div>
   <p style="font-size:14px;color:#333333">你的验证码是：</p>
-  <p style="font-size:32px;font-weight:bold;color:#660874;letter-spacing:6px;text-align:center;margin:12px 0">{{.VerificationCode}}</p>
+  <p style="font-size:32px;font-weight:bold;color:#660874;letter-spacing:6px;text-align:center;margin:12px 0">{{ .Token }}</p>
   <p style="font-size:12px;color:#999999">验证码 10 分钟内有效，请勿转发给他人。如非本人操作，请忽略本邮件。</p>
 </div>
 ```
 
-中文（registerSignInZhCN）与英文（registerSignInEnUS）模板可分别设置；保存后立即生效，
-新发送的验证码邮件即为清华二手品牌样式，不再带任何平台 Logo。
+保存后立即生效，新发送的验证码邮件即为清华二手品牌样式，不再带任何 Supabase Logo。
+如需自定义发件人，可在 **Project Settings → Authentication → SMTP** 配置自有 SMTP（可选）。
 
 ---
 
@@ -240,9 +252,12 @@ flutter build apk --release
 - **消息无推送**：云端无推送通道，未读采用打开 App 时 + 30s 轮询 + 打开会话置底已读
 - **图片压缩在前端**：多选时按质量 85 / 1400px 压缩，未引入额外原生图片库
 - **内容安全为客户端第一道防线**：本地词库拦截 + 举报表（`reports`）留痕，生产环境应叠加服务端审核
-- **手机号登录是独立身份**：云端认证平台未开放「手机号绑定到已有账号」（provider bind）能力，
-  因此手机号渠道只用于登录（不注册），绑定手机号用于个人资料展示；若需手机号直接登录同一账号，
-  需要平台开放账号绑定能力或自建身份映射服务
+- **手机号暂不作为登录方式**：Supabase 免费档不含短信服务商（Phone 登录需自行接入短信商），
+  手机号降级为站内「联系手机号」（保存于 profiles.phone，买家在商品详情页可见）；
+  后续如需手机号登录，在 Supabase 接入短信服务商后开启 Phone 渠道即可
+- **后端为 Supabase（v1.0.3 起）**：原自建云端的邮箱 OTP 令牌体系经新旧两个环境实测确认存在
+  平台级故障（合法验证令牌一律被拒），整体迁移至 GitHub 80k★ 的 Supabase；
+  App 内 8 个业务 service 经 CloudClient 适配层零改动接入
 - **30 天免登录依赖刷新令牌有效期**：本地按 30 天窗口保持会话并自动刷新；
   若云端刷新令牌先行失效，用户需重新登录（此时为静默登出，无错误弹窗）
 - **release 使用 debug 签名**：便于直接安装体验；正式发布请替换为自己的签名配置
