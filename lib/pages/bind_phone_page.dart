@@ -7,9 +7,9 @@ import '../utils/validators.dart';
 
 /// 联系手机号：保存到 profiles.phone，用于发布商品时展示给买家联系。
 ///
-/// 说明：邮箱验证码登录由 Supabase Auth 提供；手机号短信登录需要
-/// 额外的短信服务商配置（Supabase 免费档默认不含），当前版本
-/// 暂不提供手机号登录，手机号仅作为站内联系信息保存。
+/// 说明：登录方式为邮箱 + 密码；手机号短信登录需要额外的付费短信
+/// 服务商（Supabase 免费档默认不含），当前版本手机号仅作为站内
+/// 联系信息保存。
 class BindPhonePage extends StatefulWidget {
   const BindPhonePage({super.key});
 

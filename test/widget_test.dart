@@ -12,10 +12,9 @@ void main() {
       expect(Validators.isPhone('1380013800'), false);
     });
 
-    test('清华邮箱校验', () {
-      expect(Validators.isTsinghuaEmail('zhangsan@mails.tsinghua.edu.cn'), true);
-      expect(Validators.isTsinghuaEmail('zhangsan@tsinghua.edu.cn'), true);
-      expect(Validators.isTsinghuaEmail('zhangsan@gmail.com'), false);
+    test('邮箱格式校验', () {
+      expect(Validators.isEmail('zhangsan@example.com'), true);
+      expect(Validators.isEmail('not-an-email'), false);
     });
 
     test('学号校验', () {

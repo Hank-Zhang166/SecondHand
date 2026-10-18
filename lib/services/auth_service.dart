@@ -5,11 +5,11 @@ import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import 'cloud_client.dart';
 import '../models/user_profile.dart';
 
-/// 认证服务：会话持久化、邮箱验证码登录注册、资料加载
+/// 认证服务：会话持久化、邮箱 + 密码登录注册、资料加载
 ///
-/// 后端为 Supabase Auth：邮箱 + 6 位验证码，验证通过即登录
-/// （新用户自动创建账号）。会话由 SDK 自动持久化并自动刷新，
-/// 同一设备登录后 30 天内无需再次登录。
+/// 后端为 Supabase Auth：邮箱 + 密码，不依赖邮件/短信通道。
+/// 新用户由数据库触发器自动确认，注册成功即返回会话。
+/// 会话由 SDK 自动持久化并自动刷新，同一设备登录后 30 天内无需再次登录。
 class AuthService with ChangeNotifier {
   final CloudClient client;
   final SharedPreferences prefs;
@@ -77,16 +77,31 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  /// 邮箱验证码登录/注册一体化流程：
-  /// 1. sendOtp：Supabase 发送 6 位验证码
-  /// 2. verifyOtp：验证通过即登录成功（新用户自动注册）
-  ///
-  /// 绝不会出现"注册成功请登录"或要求重复输入的中断。
-  Future<AuthUser> loginWithOtp({
+  /// 邮箱 + 密码登录（已有账号）
+  Future<AuthUser> signIn({
     required String email,
-    required String code,
+    required String password,
   }) async {
-    final session = await client.verifyOtp(email: email, code: code);
+    final session = await client.signInWithPassword(
+      email: email,
+      password: password,
+    );
+    await _adoptSession(session);
+    return session.user;
+  }
+
+  /// 邮箱 + 密码注册（新账号）。
+  /// 返回 null 表示账号已创建但云端未返回会话（邮箱确认被要求时，
+  /// 正常情况下触发器已自动确认，不会出现此情况）。
+  Future<AuthUser?> signUp({
+    required String email,
+    required String password,
+  }) async {
+    final session = await client.signUpWithPassword(
+      email: email,
+      password: password,
+    );
+    if (session == null) return null;
     await _adoptSession(session);
     return session.user;
   }
@@ -138,7 +153,6 @@ class AuthService with ChangeNotifier {
           'nickname': user?.name?.isNotEmpty == true ? user!.name! : '清华同学',
           'student_id': '',
           'department': '',
-          'thu_email_verified': isTsinghuaEmail(user?.email),
         });
         if (created.isNotEmpty) {
           _profile = UserProfile.fromJson(created.first);
@@ -185,10 +199,4 @@ class AuthService with ChangeNotifier {
       notifyListeners();
     }
   }
-
-  /// 账号邮箱是否为清华邮箱（学生身份的最简校验依据）
-  static bool isTsinghuaEmail(String? email) =>
-      email != null &&
-      (email.endsWith('@mails.tsinghua.edu.cn') ||
-          email.endsWith('@tsinghua.edu.cn'));
 }

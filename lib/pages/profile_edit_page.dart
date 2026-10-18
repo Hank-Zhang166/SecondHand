@@ -123,7 +123,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
     final email = auth.user?.email;
-    final verified = auth.profile?.thuEmailVerified == true;
 
     return Scaffold(
       appBar: AppBar(title: const Text('编辑资料')),
@@ -241,15 +240,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                     email ?? '未绑定邮箱',
                     style: const TextStyle(
                         fontSize: 13, color: Color(0xFF616161)),
-                  ),
-                ),
-                Text(
-                  verified ? '已认证' : '非清华邮箱',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: verified
-                        ? const Color(0xFF2E7D32)
-                        : const Color(0xFF9E9E9E),
                   ),
                 ),
               ],

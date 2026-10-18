@@ -511,20 +511,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500),
                                 ),
-                                if (_sellerProfile?.thuEmailVerified == true)
-                                  Container(
-                                    margin: const EdgeInsets.only(left: 6),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF3E5F5),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Text('清华认证',
-                                        style: TextStyle(
-                                            fontSize: 10,
-                                            color: Color(0xFF660874))),
-                                  ),
                               ],
                             ),
                             const SizedBox(height: 2),

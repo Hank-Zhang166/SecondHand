@@ -5,11 +5,6 @@ class Validators {
   /// 大陆手机号：11 位，1 开头
   static bool isPhone(String s) => RegExp(r'^1\d{10}$').hasMatch(s);
 
-  /// 清华邮箱（学生邮箱或教职工邮箱）——学生身份最简校验依据
-  static bool isTsinghuaEmail(String s) =>
-      s.trim().toLowerCase().endsWith('@mails.tsinghua.edu.cn') ||
-      s.trim().toLowerCase().endsWith('@tsinghua.edu.cn');
-
   static bool isEmail(String s) =>
       RegExp(r'^[\w.+-]+@[\w-]+(\.[\w-]+)+$').hasMatch(s.trim());
 

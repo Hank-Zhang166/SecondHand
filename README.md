@@ -12,11 +12,13 @@
 ## 一、功能清单
 
 ### 1. 注册登录
-- **注册仅支持清华邮箱**：输入邮箱 + 验证码即可，**登录注册一体化**——未注册的邮箱验证通过后自动创建账号并直接进入应用，绝不出现“注册成功，请登录”或要求重复输入的中断
-- 手机号 + 短信验证码作为**第二种登录方式**（登录页次级入口）：仅允许登录已注册账号，不创建新账号；需先用邮箱注册，并在「我的 → 绑定手机号」完成绑定
-- 60 秒验证码倒计时；验证码错误、账号不存在/已存在等场景自动走兜底分支（signin ↔ signup 互为兜底）
+- **邮箱 + 密码登录**：输入邮箱与密码即可，不发送验证码、不依赖邮件通道；首次使用切到「注册」，注册成功直接进入应用
+- **注册即登录**：云端数据库触发器自动确认新用户（等价于关闭 Confirm email），不会出现「注册成功请登录」或「收不到验证码」的问题
 - **30 天账号记忆**：同一设备登录成功后 30 天内无需再次登录；启动时自动恢复会话、静默刷新，并用服务端校验本地会话（失效则静默清除，不弹任何英文错误）
 - 《用户须知》弹窗（交易规则 + 防骗提示），需勾选同意才能继续
+
+> 未使用手机号 + 短信验证码：Supabase 不提供内置短信通道，需接入 Twilio 等付费短信商；
+> 邮箱 + 密码完全免费，且不消耗邮件额度、不受邮件限流影响。
 
 ### 2. 首页 · 浏览检索
 - 关键词模糊搜索（标题 / 描述，`ilike`），实时清空
@@ -27,7 +29,7 @@
 ### 3. 商品详情
 - 多图轮播（指示点）+ 价格 + 标题 + 分类/地点/截止日期 chips
 - 完整描述、发布相对时间
-- 卖家信息卡（昵称、院系、清华邮箱认证标识）
+- 卖家信息卡（昵称、院系、联系手机号）
 - 校园交易安全提示卡
 
 ### 4. 发布商品
@@ -48,7 +50,7 @@
 - 我的订单（买家视角）：意向列表、取消意向、联系卖家
 - 我的收藏：云端同步的收藏夹（可取消）
 - 浏览历史：本地记录（最多 100 条）、一键清空
-- 编辑资料：头像上传、昵称、学号（9-10 位校验）、院系；清华邮箱认证标识
+- 编辑资料：头像上传、昵称、学号（9-10 位校验）、院系
 - **联系手机号**：保存到 profiles.phone（Supabase 免费档默认不含短信服务商，暂不提供手机号登录；手机号仅作为站内联系信息展示给买家）
 - 用户须知与防骗指南、退出登录
 
@@ -57,7 +59,7 @@
 
 ### 8. 校园场景与安全
 - 交付地点限定校内常用地点（可自定义补充）
-- 学生身份最简校验：清华邮箱（`@mails.tsinghua.edu.cn` / `@tsinghua.edu.cn`）认证标识 + 学号选填
+- 学生身份以学号（选填）作为辅助信息；不再做清华邮箱校验
 - 图片压缩 + 类型/大小（≤8MB）校验
 - 数据校验（手机号/邮箱/学号/价格/标题/描述/截止日期）
 - 内容安全：违规词库 + 站外付款防诈引导词拦截
@@ -79,8 +81,8 @@
                                      │ supabase_flutter 官方 SDK（HTTPS）
 ┌────────────────────────────────────▼─────────────────────────────────────────┐
 │ Supabase（GitHub 80k★ 开源 BaaS：Auth / Postgres / Storage）                  │
-│  Auth       邮箱 OTP：signInWithOtp 发 6 位码 → verifyOTP                     │
-│             （验证通过即完成注册+登录，新用户自动建号）                        │
+│  Auth       邮箱 + 密码：signInWithPassword / signUp                          │
+│             （数据库触发器自动确认新用户，注册即登录，不发邮件）              │
 │  PostgREST  PostgreSQL（RLS 数据隔离，auth.uid() 自动填充 owner_id）          │
 │  Storage    runtime 桶：上传 / 下载 URL                                       │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -101,7 +103,7 @@
 
 | 表 | 说明 | 关键字段 | RLS 策略 |
 |---|---|---|---|
-| `profiles` | 用户资料 | owner_id(唯一) nickname avatar_path student_id department thu_email_verified | 仅本人读写 |
+| `profiles` | 用户资料 | owner_id(唯一) nickname avatar_path student_id department phone | 仅本人读写 |
 | `products` | 商品 | owner_id owner_name title description price category images[] deadline location status | 公开读（`status<>'off_shelf' OR 作者`），仅作者写 |
 | `orders` | 购买意向 | product_id product_title buyer_id buyer_name seller_id status note | 买卖双方可见，买家创建、双方可更新 |
 | `conversations` | 私信会话 | user_a user_b product_id product_title last_message last_message_at | 仅参与者可见 |
@@ -124,17 +126,16 @@ supabaseAnonKey = sb_publishable_...         // Publishable key（可暴露在�
 storageBucket   = runtime                    // 存储桶（建表脚本自动创建）
 ```
 
-> ⚠️ **登录失败的根因**：Supabase 默认发送「点击链接」的邮件，而不是 6 位数字验证码。
-> 必须把邮件模板改成 `{{ .Token }}`，否则 App 的验证码登录永远无法成功。详见
-> [`docs/setup_supabase.md`](docs/setup_supabase.md)。
+> ✅ **登录不需要邮件模板**：当前版本是邮箱 + 密码登录，`docs/schema_supabase.sql`
+> 里的 `auto_confirm_email` 触发器会自动确认新用户，注册即登录，不发送任何邮件。
+> 详见 [`docs/setup_supabase.md`](docs/setup_supabase.md)。
 
-**接入五步**（一次性，约 10 分钟，完整图文见 [`docs/setup_supabase.md`](docs/setup_supabase.md)）：
+**接入四步**（一次性，约 5 分钟，完整说明见 [`docs/setup_supabase.md`](docs/setup_supabase.md)）：
 
 1. 打开 <https://supabase.com>，用 GitHub 账号登录
 2. **New project**：Name 填 `thu-secondhand`，Region 选 **Singapore（ap-southeast-1，离国内最近）**，Database Password 点 Generate 后保存
-3. 项目就绪后进入 **SQL Editor → New query**，粘贴并执行 [`docs/schema_supabase.sql`](docs/schema_supabase.sql)（建 7 表 + RLS + 索引 + 存储桶，幂等可重复）
-4. **Authentication → Email Templates**：把 **Confirm signup** 与 **Magic link** 两个模板都改成 `{{ .Token }}`（6 位数字验证码），HTML 见 setup 文档
-5. **Project Settings → API** 复制 **Project URL** 与 **Publishable key**，填入 `lib/config/cloud_config.dart`，重新构建即可
+3. 项目就绪后进入 **SQL Editor → New query**，粘贴并执行 [`docs/schema_supabase.sql`](docs/schema_supabase.sql)（建 7 表 + RLS + 索引 + 存储桶 + 自动确认触发器，幂等可重复）
+4. **Project Settings → API** 复制 **Project URL** 与 **Publishable key**，填入 `lib/config/cloud_config.dart`，重新构建即可
 
 未配置时 App 启动会显示明确的后端配置引导页，不会静默失败。
 
@@ -151,7 +152,7 @@ SecondHand/
 │   ├── state/app_state.dart      全局服务容器（共享单 CloudClient）
 │   ├── services/                 云端 HTTP 客户端与各业务服务
 │   │   ├── cloud_client.dart     Supabase 适配层（Auth / PostgREST / Storage）
-│   │   ├── auth_service.dart     会话持久化、验证码登录、资料
+│   │   ├── auth_service.dart     会话持久化、邮箱密码登录、资料
 │   │   ├── product_service.dart  信息流 / 搜索 / 发布 / 状态管理
 │   │   ├── order_service.dart    购买意向
 │   │   ├── chat_service.dart     会话 / 消息 / 已读 / 未读统计
@@ -205,7 +206,7 @@ flutter build apk --release
 > 若使用模拟器测试，建议用 x86_64 镜像；`flutter build apk --split-per-abi` 可进一步减小包体。
 
 ### 首次使用
-1. 安装 APK，输入清华邮箱获取验证码（未注册邮箱自动创建账号并直接进入）
+1. 安装 APK，切到「注册」输入邮箱 + 密码（至少 6 位），注册成功直接进入；已有账号切「登录」
 2. 建议「我的 → 编辑资料」补全昵称 / 学号 / 院系；「我的 → 联系手机号」保存后展示在商品详情页
 3. 首页浏览或搜索 → 详情页「我想要」→ 站内私信协商时间地点 → 校内见面交易
 
@@ -227,15 +228,13 @@ flutter build apk --release
 遇到异常启动时：白屏且无文字 → 多为原生渲染问题（确认已用带 `EnableImpeller=false` 的新包）；
 卡在启动页某一步 → 按步骤文案定位（本地存储/网络）；显示错误页 → 页面上有具体异常信息，请截图反馈。
 
-### 验证码邮件定制（去除平台 Logo）
+### 登录方式说明（为什么不是短信验证码）
 
-Supabase 默认邮件模板既有平台 Logo，又是「点击链接」而不是 6 位数字验证码——这是登录
-失败的根因。**必须同时修改两个模板**（新用户走 Confirm signup，老用户走 Magic link），
-把链接替换成 `{{ .Token }}` 变量。两套可直接粘贴的 HTML 与逐图步骤见
-[`docs/setup_supabase.md`](docs/setup_supabase.md)（关键：模板里保留 `{{ .Token }}`，
-删除 `{{ .ConfirmationURL }}`，保存后立即生效）。
-
-如需自定义发件人，可在 **Project Settings → Authentication → SMTP** 配置自有 SMTP（可选）。
+- 当前登录为 **邮箱 + 密码**，不发送验证码，也不需要配置任何邮件模板。
+- 新用户由 `docs/schema_supabase.sql` 中的 `auto_confirm_email` 触发器自动确认，
+  注册接口会直接返回会话；即使后台仍显示 "Confirm email"，也不影响登录。
+- Supabase 没有内置短信通道；手机号 + 短信验证码需要接入 Twilio 等付费短信商，
+  课程项目不建议为此额外付费。联系手机号仍可在「我的 → 联系手机号」保存并展示。
 
 ---
 
@@ -245,12 +244,12 @@ Supabase 默认邮件模板既有平台 Logo，又是「点击链接」而不是
 - **消息无推送**：云端无推送通道，未读采用打开 App 时 + 30s 轮询 + 打开会话置底已读
 - **图片压缩在前端**：多选时按质量 85 / 1400px 压缩，未引入额外原生图片库
 - **内容安全为客户端第一道防线**：本地词库拦截 + 举报表（`reports`）留痕，生产环境应叠加服务端审核
-- **手机号暂不作为登录方式**：Supabase 免费档不含短信服务商（Phone 登录需自行接入短信商），
-  手机号降级为站内「联系手机号」（保存于 profiles.phone，买家在商品详情页可见）；
-  后续如需手机号登录，在 Supabase 接入短信服务商后开启 Phone 渠道即可
-- **后端为 Supabase（v1.0.3 起）**：原自建云端的邮箱 OTP 令牌体系经新旧两个环境实测确认存在
-  平台级故障（合法验证令牌一律被拒），整体迁移至 GitHub 80k★ 的 Supabase；
-  App 内 8 个业务 service 经 CloudClient 适配层零改动接入
+- **手机号仅作联系方式**：Supabase 免费档不含短信服务商（Phone 登录需接入 Twilio 等付费短信商），
+  因此登录采用邮箱 + 密码；手机号保存于 profiles.phone，买家在商品详情页可见
+- **后端为 Supabase（v1.0.3 起）**：原自建云端认证存在平台级故障，整体迁移至
+  GitHub 80k★ 的 Supabase；App 内业务 service 经 CloudClient 适配层接入
+- **注册即登录**：`auto_confirm_email` 触发器在 `auth.users` 写入时自动设置
+  `email_confirmed_at`，等价于关闭 Confirm email；不发送确认邮件，也不受邮件限流影响
 - **30 天免登录依赖刷新令牌有效期**：本地按 30 天窗口保持会话并自动刷新；
   若云端刷新令牌先行失效，用户需重新登录（此时为静默登出，无错误弹窗）
 - **release 使用 debug 签名**：便于直接安装体验；正式发布请替换为自己的签名配置

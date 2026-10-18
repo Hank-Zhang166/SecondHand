@@ -1,18 +1,15 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
 import '../services/cloud_client.dart';
-import '../state/app_state.dart';
 import '../utils/validators.dart';
 
-/// 登录 / 注册页
+/// 登录 / 注册页（邮箱 + 密码）
 ///
-/// 仅支持清华邮箱注册（验证码一体化：输入邮箱 + 验证码即可，
-/// 未注册邮箱自动创建账号，绝不再跳"注册成功请登录"）。
+/// 不使用验证码与邮件确认：新用户由云端数据库触发器自动确认，
+/// 注册成功后直接返回会话，因此不依赖任何邮件/短信通道。
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -21,34 +18,33 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _accountController = TextEditingController();
-  final _codeController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
-  int _countdown = 0;
-  Timer? _timer;
-  bool _sending = false;
+  bool _register = false;
+  bool _obscure = true;
   bool _submitting = false;
   bool _agreed = false;
 
-  String get _account => _accountController.text.trim();
+  String get _email => _emailController.text.trim();
+  String get _password => _passwordController.text;
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _accountController.dispose();
-    _codeController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  String? _validateAccount() {
-    final v = _account;
-    if (v.isEmpty) return '请输入邮箱';
-    if (!Validators.isEmail(v)) return '邮箱格式不正确';
+  String? _validate() {
+    if (_email.isEmpty) return '请输入邮箱';
+    if (!Validators.isEmail(_email)) return '邮箱格式不正确';
+    if (_password.length < 6) return '密码至少 6 位';
     return null;
   }
 
-  Future<void> _sendCode() async {
-    final err = _validateAccount();
+  Future<void> _submit() async {
+    final err = _validate();
     if (err != null) {
       _toast(err);
       return;
@@ -57,54 +53,22 @@ class _LoginPageState extends State<LoginPage> {
       _toast('请先阅读并同意用户须知');
       return;
     }
-    setState(() => _sending = true);
-    try {
-      await context.read<AppServices>().client.sendOtp(email: _account);
-      if (!mounted) return;
-      setState(() => _countdown = 60);
-      _timer?.cancel();
-      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
-        setState(() {
-          if (_countdown > 0) _countdown--;
-          if (_countdown == 0) _timer?.cancel();
-        });
-      });
-      _toast('验证码已发送，请查收邮件中的 6 位数字验证码');
-    } on CloudException catch (e) {
-      _toast(e.message);
-    } catch (_) {
-      _toast('验证码发送失败，请检查网络后重试');
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  Future<void> _submit() async {
-    final accountErr = _validateAccount();
-    if (accountErr != null) {
-      _toast(accountErr);
-      return;
-    }
-    if (!_agreed) {
-      _toast('请先阅读并同意用户须知');
-      return;
-    }
-    final code = _codeController.text.trim();
-    if (code.length != 6) {
-      _toast('请输入 6 位验证码');
-      return;
-    }
     setState(() => _submitting = true);
     try {
       final auth = context.read<AuthService>();
-      // 邮箱：注册 + 登录一体化，验证通过直接进入应用
-      await auth.loginWithOtp(email: _account, code: code);
-      // 登录成功后 RootGate 会自动切换到主框架
+      if (_register) {
+        final user = await auth.signUp(email: _email, password: _password);
+        if (user == null) {
+          _toast('账号已创建，请切换到「登录」再试一次');
+        }
+      } else {
+        await auth.signIn(email: _email, password: _password);
+      }
+      // 登录成功后 RootGate 自动切换到主框架
     } on CloudException catch (e) {
       _toast(e.message);
     } catch (_) {
-      _toast('登录失败，请稍后重试');
+      _toast('操作失败，请稍后重试');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -156,7 +120,6 @@ class _LoginPageState extends State<LoginPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 36),
-                // 品牌区
                 Container(
                   width: 76,
                   height: 76,
@@ -164,8 +127,7 @@ class _LoginPageState extends State<LoginPage> {
                     color: const Color(0xFF660874),
                     borderRadius: BorderRadius.circular(18),
                   ),
-                  child: const Icon(Icons.school,
-                      size: 40, color: Colors.white),
+                  child: const Icon(Icons.school, size: 40, color: Colors.white),
                 ),
                 const SizedBox(height: 14),
                 const Text(
@@ -175,81 +137,53 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 6),
                 const Text(
                   '校园二手物品 · 校内面对面交易',
-                  style: TextStyle(
-                      fontSize: 13, color: Color(0xFF9E9E9E)),
+                  style: TextStyle(fontSize: 13, color: Color(0xFF9E9E9E)),
                 ),
-                const SizedBox(height: 32),
-                // 账号输入
-                TextField(
-                  controller: _accountController,
-                  keyboardType: TextInputType.emailAddress,
-                  inputFormatters: [
-                    LengthLimitingTextInputFormatter(60),
+                const SizedBox(height: 26),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment<bool>(value: false, label: Text('登录')),
+                    ButtonSegment<bool>(value: true, label: Text('注册')),
                   ],
+                  selected: {_register},
+                  onSelectionChanged: (s) => setState(() => _register = s.first),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  inputFormatters: [LengthLimitingTextInputFormatter(60)],
                   decoration: const InputDecoration(
-                    hintText: '请输入清华邮箱',
+                    hintText: '请输入邮箱',
                     prefixIcon: Icon(Icons.mail_outline),
                   ),
                   onChanged: (_) => setState(() {}),
                 ),
-                const SizedBox(height: 8),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '建议使用 @mails.tsinghua.edu.cn 学生邮箱，'
-                    '可作为学生身份校验依据',
-                    style:
-                        TextStyle(fontSize: 11, color: Color(0xFF9E9E9E)),
-                  ),
-                ),
                 const SizedBox(height: 12),
-                // 验证码
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _codeController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(6),
-                        ],
-                        decoration: const InputDecoration(
-                          hintText: '请输入 6 位验证码',
-                          prefixIcon: Icon(Icons.sms_outlined),
-                        ),
+                TextField(
+                  controller: _passwordController,
+                  obscureText: _obscure,
+                  inputFormatters: [LengthLimitingTextInputFormatter(64)],
+                  decoration: InputDecoration(
+                    hintText: '请输入密码（至少 6 位）',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                      icon: Icon(
+                        _obscure ? Icons.visibility_off : Icons.visibility,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 108,
-                      child: OutlinedButton(
-                        onPressed:
-                            (_sending || _countdown > 0) ? null : _sendCode,
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Color(0xFF660874)),
-                          foregroundColor: const Color(0xFF660874),
-                        ),
-                        child: Text(
-                          _countdown > 0 ? '${_countdown}s 后重发' : '获取验证码',
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
+                  onSubmitted: (_) => _submit(),
                 ),
-                const SizedBox(height: 18),
-                // 用户须知
+                const SizedBox(height: 14),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Checkbox(
                       value: _agreed,
-                      onChanged: (v) =>
-                          setState(() => _agreed = v ?? false),
-                      materialTapTargetSize:
-                          MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (v) => setState(() => _agreed = v ?? false),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                     ),
                     Expanded(
@@ -293,14 +227,15 @@ class _LoginPageState extends State<LoginPage> {
                             color: Colors.white,
                           ),
                         )
-                      : const Text('登录 / 注册'),
+                      : Text(_register ? '注册并登录' : '登录'),
                 ),
                 const SizedBox(height: 14),
-                const Text(
-                  '未注册的邮箱验证通过后将自动创建账号，无需单独注册',
+                Text(
+                  _register
+                      ? '注册成功会自动登录，无需邮箱验证码'
+                      : '首次使用请先切换到「注册」创建账号',
                   textAlign: TextAlign.center,
-                  style:
-                      TextStyle(fontSize: 11, color: Color(0xFF9E9E9E)),
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF9E9E9E)),
                 ),
               ],
             ),

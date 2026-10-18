@@ -16,7 +16,6 @@ BEGIN
     avatar_path TEXT,
     student_id TEXT,
     department TEXT,
-    thu_email_verified BOOLEAN NOT NULL DEFAULT false,
     phone TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -197,7 +196,7 @@ ON CONFLICT (id) DO NOTHING;
   CREATE INDEX IF NOT EXISTS idx_favorites_owner ON public.favorites (owner_id);
 
   -- ========== 表注释 ==========
-  COMMENT ON TABLE public.profiles IS '用户资料：昵称/头像/学号/院系/清华邮箱认证';
+  COMMENT ON TABLE public.profiles IS '用户资料：昵称/头像/学号/院系/联系手机号';
   COMMENT ON TABLE public.products IS '二手商品：标题/描述/价格/分类/图片/截止日期/交付地点/状态';
   COMMENT ON TABLE public.orders IS '购买意向：买家提交，卖家接受或拒绝';
   COMMENT ON TABLE public.conversations IS '私信会话（买卖双方，可关联商品）';
@@ -205,3 +204,28 @@ ON CONFLICT (id) DO NOTHING;
   COMMENT ON TABLE public.favorites IS '商品收藏';
   COMMENT ON TABLE public.reports IS '内容安全举报';
 END $$;
+
+-- ========== 自动确认新用户（邮箱 + 密码登录的关键） ==========
+-- Supabase 免费项目的 Auth 默认要求邮箱确认（Confirm email），
+-- 这会导致密码注册后拿不到会话。本触发器在写入 auth.users 时
+-- 直接把 email_confirmed_at 设为当前时间，效果等同于关闭
+-- "Confirm email"：新用户注册即可登录，且不会发送确认邮件。
+create or replace function public.auto_confirm_email()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if new.email_confirmed_at is null then
+    new.email_confirmed_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists auto_confirm_email on auth.users;
+create trigger auto_confirm_email
+before insert on auth.users
+for each row
+execute function public.auto_confirm_email();

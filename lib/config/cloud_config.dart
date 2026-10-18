@@ -6,8 +6,8 @@
 /// - supabaseAnonKey：可发布密钥（publishable key，等价于旧版 anon key，
 ///   本身不带权限，由服务端 RLS 规则管控，可安全放进客户端代码）
 ///
-/// 邮箱验证码登录由 Supabase Auth 提供：输入邮箱 → 收 6 位码 →
-/// 验证成功即完成注册+登录（新用户自动创建账号）。
+/// 登录由 Supabase Auth 提供：邮箱 + 密码，注册成功即登录
+/// （新用户由数据库触发器自动确认，不发送验证码/确认邮件）。
 class CloudConfig {
   CloudConfig._();
 

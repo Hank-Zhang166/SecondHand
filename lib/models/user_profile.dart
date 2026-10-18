@@ -6,7 +6,6 @@ class UserProfile {
   final String avatarPath;
   final String studentId;
   final String department;
-  final bool thuEmailVerified;
   final String phone;
 
   UserProfile({
@@ -16,7 +15,6 @@ class UserProfile {
     required this.avatarPath,
     required this.studentId,
     required this.department,
-    required this.thuEmailVerified,
     this.phone = '',
   });
 
@@ -29,7 +27,6 @@ class UserProfile {
         avatarPath: '${j['avatar_path'] ?? ''}',
         studentId: '${j['student_id'] ?? ''}',
         department: '${j['department'] ?? ''}',
-        thuEmailVerified: j['thu_email_verified'] == true,
         phone: '${j['phone'] ?? ''}',
       );
 

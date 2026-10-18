@@ -88,7 +88,6 @@ class _ProfilePageState extends State<ProfilePage> {
     final auth = context.watch<AuthService>();
     final profile = auth.profile;
     final user = auth.user;
-    final verified = profile?.thuEmailVerified == true;
     final complete = profile != null && profile.studentId.isNotEmpty;
 
     return Scaffold(
@@ -141,21 +140,6 @@ class _ProfilePageState extends State<ProfilePage> {
                             style: const TextStyle(
                                 fontSize: 17, fontWeight: FontWeight.w600),
                           ),
-                          if (verified) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF3E5F5),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text('清华认证',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      color: Color(0xFF660874))),
-                            ),
-                          ],
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -165,16 +149,6 @@ class _ProfilePageState extends State<ProfilePage> {
                             : (user?.email ?? '未绑定账号'),
                         style: const TextStyle(
                             fontSize: 12, color: Color(0xFF9E9E9E)),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        verified ? '已通过清华邮箱认证' : '未认证学生身份',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: verified
-                              ? const Color(0xFF2E7D32)
-                              : const Color(0xFFE65100),
-                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(

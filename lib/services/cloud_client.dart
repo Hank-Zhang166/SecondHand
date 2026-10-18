@@ -106,14 +106,6 @@ class Session {
       );
 }
 
-/// 验证码挑战（发送验证码后的结果）
-class OtpChallenge {
-  final String verificationId;
-  final bool isExistingUser;
-
-  OtpChallenge(this.verificationId, this.isExistingUser);
-}
-
 /// 云端客户端（Supabase 适配层）
 ///
 /// 对外暴露与原实现一致的 API（认证 / 数据库 PostgREST 风格 / 存储），
@@ -143,6 +135,24 @@ class CloudClient {
   /// 把后端原始错误映射为面向用户的中文文案
   String _friendlyMessage(String raw, int status, String code) {
     final lower = raw.toLowerCase();
+    if (lower.contains('invalid login credentials') ||
+        lower.contains('invalid_credentials')) {
+      return '邮箱或密码不正确';
+    }
+    if (lower.contains('user already registered') ||
+        lower.contains('already registered') ||
+        lower.contains('user_already_exists')) {
+      return '该邮箱已注册，请切换到「登录」';
+    }
+    if (lower.contains('password should be') ||
+        lower.contains('weak_password') ||
+        lower.contains('weak password')) {
+      return '密码强度不足，请至少 6 位';
+    }
+    if (lower.contains('email not confirmed') ||
+        lower.contains('email_not_confirmed')) {
+      return '邮箱尚未确认，请联系管理员完成确认';
+    }
     if (lower.contains('session is invalid') ||
         lower.contains('expired or issued') ||
         lower.contains('invalid_grant') ||
@@ -154,9 +164,6 @@ class CloudClient {
         lower.contains('resource_exhausted') ||
         status == 429) {
       return '操作太频繁了，请 1 分钟后再试';
-    }
-    if (raw.contains('验证码') || lower.contains('token has expired')) {
-      return '验证码不正确或已过期，请重新获取';
     }
     if (lower.contains('user not found') || lower.contains('not exist')) {
       return '账号不存在，请先注册';
@@ -203,47 +210,41 @@ class CloudClient {
 
   // ==================== 认证模块（Supabase Auth） ====================
 
-  /// 发送邮箱验证码（6 位）。Supabase 自动识别新老用户：
-  /// 验证通过时新用户自动创建账号，实现"注册+登录一体化"。
-  Future<OtpChallenge> sendOtp({String? phone, String? email}) async {
-    if (phone != null && phone.isNotEmpty) {
-      // 手机号验证码需要短信服务商配置（Supabase 免费档默认不含），
-      // 当前版本仅支持邮箱渠道
-      throw CloudException(
-          0, 'PHONE_UNSUPPORTED', '当前版本仅支持邮箱验证码登录');
-    }
-    if (email == null || email.isEmpty) {
-      throw CloudException(0, 'BAD_ARGS', '请填写邮箱');
-    }
-    try {
-      await _sb.auth.signInWithOtp(
-        email: email,
-        shouldCreateUser: true,
-      );
-      return OtpChallenge('', false);
-    } catch (e, st) {
-      _fail(e, st);
-    }
-  }
-
-  /// 校验邮箱验证码。验证通过即登录成功（新用户自动注册），返回会话。
-  Future<Session> verifyOtp({
+  /// 邮箱 + 密码登录（不依赖任何邮件/短信通道）
+  Future<Session> signInWithPassword({
     required String email,
-    required String code,
+    required String password,
   }) async {
     try {
-      final res = await _sb.auth.verifyOTP(
+      final res = await _sb.auth.signInWithPassword(
         email: email,
-        token: code,
-        type: sb.OtpType.email,
+        password: password,
       );
       final session = res.session;
       if (session == null) {
-        throw CloudException(0, 'NO_SESSION', '验证异常，请重新获取验证码');
+        throw CloudException(0, 'NO_SESSION', '登录失败，请重试');
       }
       return _toSession(session);
     } catch (e, st) {
       if (e is CloudException) rethrow;
+      _fail(e, st);
+    }
+  }
+
+  /// 邮箱 + 密码注册。后台已用数据库触发器自动确认新用户，
+  /// 正常情况下注册成功即返回会话（无需邮箱确认、无需验证码）。
+  Future<Session?> signUpWithPassword({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final res = await _sb.auth.signUp(
+        email: email,
+        password: password,
+      );
+      final session = res.session;
+      return session == null ? null : _toSession(session);
+    } catch (e, st) {
       _fail(e, st);
     }
   }

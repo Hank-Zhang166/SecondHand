@@ -1,125 +1,60 @@
-# SecondHand · Supabase 云端接入完整指南
+# SecondHand · Supabase 云端接入指南（邮箱 + 密码版）
 
-> 本 App 采用「邮箱 + 6 位数字验证码」登录注册一体化流程。
-> 登录失败 99% 是因为**邮件模板没有配置成 6 位验证码**——Supabase 默认发送的是
-> 一封带「点击链接」的邮件，里面根本没有 6 位数字，App 自然无法校验。
-> 按下面五步操作即可修复。
-
----
-
-## 第 0 步：先理解为什么会登录失败（重要）
-
-App 调用的是 `signInWithOtp` + `verifyOtp`（6 位数字验证码）。但 Supabase 的邮件模板
-默认长这样：
-
-```
-Confirm your email address
-Follow the link below to confirm this email address and finish signing up.
-[Confirm email address]  ← 一个链接，不是 6 位数字！
-```
-
-用户收到的是**链接**，不是**验证码**，于是无论怎么输入都会提示「验证码不正确或已过期」。
-
-解决办法只有一个：把邮件模板里的 `{{ .ConfirmationURL }}`（链接）换成
-`{{ .Token }}`（6 位数字验证码）。这一步必须做，而且**新用户和已有用户各用一套模板**，
-两套都要改：
-
-| 场景 | Supabase 模板名 | 说明 |
-|---|---|---|
-| 新用户首次注册登录 | **Confirm signup** | 邮箱不存在时自动建号并发送 |
-| 已有用户再次登录 | **Magic link** | 邮箱已存在时发送 |
+> 当前版本使用「邮箱 + 密码」登录，**不需要验证码、不需要邮件确认**。
+> 新用户由数据库触发器自动确认，注册成功即登录。
+> 因此不再依赖邮件模板，也不受 Supabase 内置邮件限流影响。
 
 ---
+
+## 为什么不用手机号 + 短信验证码
+
+Supabase 自身不提供短信通道，手机号登录必须接入 Twilio / Vonage 等第三方
+短信服务商：需要额外注册、绑卡、按条计费，试用期还只允许向已验证号码发送。
+对本课程项目来说，它既不能免费开箱即用，也不会比邮箱 + 密码更省事。
+
+邮箱 + 密码则完全在 Supabase 免费额度内，且**不发送任何邮件**。
 
 ## 第 1 步：创建 Supabase 项目
 
-1. 打开 <https://supabase.com>，右上角用 GitHub 账号登录。
+1. 打开 <https://supabase.com>，用 GitHub 账号登录。
 2. **New project**：
-   - Name 填 `thu-secondhand`
-   - Region 选 **Singapore（ap-southeast-1，离国内最近）**
-   - Database Password 点 Generate 后**务必保存**（数据库密码，不要提交到仓库）
-3. 等项目就绪（约 1–2 分钟）。
+   - Name：`thu-secondhand`
+   - Region：**Singapore / Seoul**（离国内近即可）
+   - Database Password：点 Generate 后保存（不要提交到仓库）
+3. 等待项目就绪。
 
 ## 第 2 步：执行建表脚本
 
 1. 进入 **SQL Editor → New query**。
-2. 把仓库里的 [`docs/schema_supabase.sql`](schema_supabase.sql) **全文粘贴**进去。
-3. 点 **Run**。脚本幂等，可重复执行；会建 7 张表 + RLS + 索引 + `runtime` 存储桶。
+2. 粘贴并执行 [`schema_supabase.sql`](schema_supabase.sql) 全文。
+3. 脚本会完成：
+   - 建 7 张业务表（profiles / products / orders / conversations / messages / favorites / reports）
+   - 开启 RLS 并创建访问策略
+   - 创建 `runtime` 存储桶与索引
+   - **创建 `auto_confirm_email` 触发器**：新用户写入 `auth.users` 时自动确认，
+     因此密码注册后可直接拿到会话，无需邮箱确认
 
-## 第 3 步：配置邮件模板为「6 位验证码」（登录修复的关键）
+> 如果之前已经建过表，脚本可重复执行；新增的触发器部分也会补齐。
 
-进入 **Authentication → Email Templates**，分别编辑下面两个模板。
+## 第 3 步：复制项目地址与密钥
 
-### 3.1 「Confirm signup」模板
+进入 **Project Settings → API**：
 
-**Subject** 填：
+- **Project URL**：`https://xxxx.supabase.co`
+- **Publishable key**：`sb_publishable_...`（等价于旧版 anon key，可安全放进 App）
 
-```text
-验证你的清华二手账号
-```
+> 不要使用 **Secret key**（`sb_secret_...`），它拥有完整权限，只能放服务端。
 
-**Message body**（HTML）粘贴：
+## 第 4 步：填入 App 配置
 
-```html
-<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F7F5F0;border-radius:12px">
-  <div style="text-align:center;margin-bottom:16px">
-    <div style="display:inline-block;width:56px;height:56px;line-height:56px;background:#660874;color:#ffffff;border-radius:14px;font-size:28px">🎓</div>
-    <h2 style="color:#660874;margin:8px 0 0">清华二手</h2>
-    <p style="color:#9e9e9e;font-size:12px;margin:4px 0 0">校园二手物品 · 校内面对面交易</p>
-  </div>
-  <p style="font-size:14px;color:#333333">你的注册验证码是：</p>
-  <p style="font-size:32px;font-weight:bold;color:#660874;letter-spacing:6px;text-align:center;margin:12px 0">{{ .Token }}</p>
-  <p style="font-size:12px;color:#999999">验证码 10 分钟内有效，请勿转发给他人。如非本人操作，请忽略本邮件。</p>
-</div>
-```
-
-### 3.2 「Magic link」模板
-
-**Subject** 填：
-
-```text
-你的清华二手登录验证码
-```
-
-**Message body**（HTML）粘贴：
-
-```html
-<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F7F5F0;border-radius:12px">
-  <div style="text-align:center;margin-bottom:16px">
-    <div style="display:inline-block;width:56px;height:56px;line-height:56px;background:#660874;color:#ffffff;border-radius:14px;font-size:28px">🎓</div>
-    <h2 style="color:#660874;margin:8px 0 0">清华二手</h2>
-    <p style="color:#9e9e9e;font-size:12px;margin:4px 0 0">校园二手物品 · 校内面对面交易</p>
-  </div>
-  <p style="font-size:14px;color:#333333">你的登录验证码是：</p>
-  <p style="font-size:32px;font-weight:bold;color:#660874;letter-spacing:6px;text-align:center;margin:12px 0">{{ .Token }}</p>
-  <p style="font-size:12px;color:#999999">验证码 10 分钟内有效，请勿转发给他人。如非本人操作，请忽略本邮件。</p>
-</div>
-```
-
-> 关键：模板里必须保留 `{{ .Token }}`（6 位数字验证码变量），
-> 且**不要**再放 `{{ .ConfirmationURL }}`。保存后立即生效。
-
-## 第 4 步：复制项目地址与密钥
-
-1. 打开 **Project Settings → API**。
-2. 复制两个值：
-   - **Project URL**：形如 `https://xxxx.supabase.co`
-   - **Publishable key**（可发布密钥，形如 `sb_publishable_...`）——
-     就是新版 Supabase 里等价于旧 `anon public` key 的那个，**可安全放进 App**。
-
-> 千万不要复制 **Secret key**（`sb_secret_...`）！它拥有完整权限，只能放服务端，
-> 一旦写进客户端代码等于把整个数据库拱手送人。
-
-## 第 5 步：填入 App 配置并重新打包
-
-打开 `lib/config/cloud_config.dart`，把第 4 步的两个值填进去：
+编辑 `lib/config/cloud_config.dart`：
 
 ```dart
 static const String supabaseUrl = 'https://xxxx.supabase.co';
 static const String supabaseAnonKey = 'sb_publishable_....';
 ```
 
-然后重新打包：
+## 第 5 步：打包运行
 
 ```bash
 flutter pub get
@@ -130,12 +65,13 @@ flutter build apk --release
 
 ---
 
-## 常见问题排查
+## 常见问题
 
-- **登录页提示「验证码不正确或已过期」，但邮箱里是链接不是数字**：第 3 步的模板没配好，
-  检查两个模板里是否都有 `{{ .Token }}` 且没有 `{{ .ConfirmationURL }}`。
-- **新用户能注册但老用户收不到验证码（或反之）**：只改了其中一个模板，
-  请把「Confirm signup」和「Magic link」两个都改。
-- **验证码进了垃圾邮件**：把发件域名加入邮箱白名单，或在
-  **Project Settings → Authentication → SMTP** 配置自有 SMTP（可选）。
-- **App 启动提示「后端尚未配置」**：`cloud_config.dart` 里的 URL/key 还是占位符。
+- **提示「邮箱或密码不正确」**：确认邮箱拼写与密码；首次使用请先切到「注册」。
+- **提示「该邮箱已注册」**：切换到「登录」即可。
+- **注册后又回到登录页**：说明自动确认触发器没有生效。检查 SQL Editor 中
+  `auto_confirm_email` 触发器是否创建成功，或重新执行一遍
+  [`schema_supabase.sql`](schema_supabase.sql)。
+- **App 启动提示「后端尚未配置」**：`cloud_config.dart` 里仍是占位符。
+- **免费额度够不够**：FREE 档包含 50,000 月活、500MB 数据库、5GB 流量，
+  课程项目完全够用；邮箱 + 密码登录不消耗邮件额度。
