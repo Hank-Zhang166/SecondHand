@@ -70,7 +70,7 @@ class _LoginPageState extends State<LoginPage> {
           if (_countdown == 0) _timer?.cancel();
         });
       });
-      _toast('验证码已发送，请查收邮件');
+      _toast('验证码已发送，请查收邮件中的 6 位数字验证码');
     } on CloudException catch (e) {
       _toast(e.message);
     } catch (_) {

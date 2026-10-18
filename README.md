@@ -119,17 +119,22 @@
 `lib/config/cloud_config.dart` 中两个值来自 Supabase 控制台 **Project Settings → API**：
 
 ```dart
-supabaseUrl    = https://xxxx.supabase.co   // Project URL
-supabaseAnonKey = eyJ...                    // anon public key（可暴露在前端，权限由 RLS 管控）
-storageBucket  = runtime                    // 存储桶（建表脚本自动创建）
+supabaseUrl     = https://xxxx.supabase.co   // Project URL
+supabaseAnonKey = sb_publishable_...         // Publishable key（可暴露在前端，权限由 RLS 管控）
+storageBucket   = runtime                    // 存储桶（建表脚本自动创建）
 ```
 
-**接入四步**（一次性，约 10 分钟）：
+> ⚠️ **登录失败的根因**：Supabase 默认发送「点击链接」的邮件，而不是 6 位数字验证码。
+> 必须把邮件模板改成 `{{ .Token }}`，否则 App 的验证码登录永远无法成功。详见
+> [`docs/setup_supabase.md`](docs/setup_supabase.md)。
+
+**接入五步**（一次性，约 10 分钟，完整图文见 [`docs/setup_supabase.md`](docs/setup_supabase.md)）：
 
 1. 打开 <https://supabase.com>，用 GitHub 账号登录
 2. **New project**：Name 填 `thu-secondhand`，Region 选 **Singapore（ap-southeast-1，离国内最近）**，Database Password 点 Generate 后保存
 3. 项目就绪后进入 **SQL Editor → New query**，粘贴并执行 [`docs/schema_supabase.sql`](docs/schema_supabase.sql)（建 7 表 + RLS + 索引 + 存储桶，幂等可重复）
-4. **Project Settings → API** 复制 **Project URL** 与 **anon public** key，填入 `lib/config/cloud_config.dart`，重新构建即可
+4. **Authentication → Email Templates**：把 **Confirm signup** 与 **Magic link** 两个模板都改成 `{{ .Token }}`（6 位数字验证码），HTML 见 setup 文档
+5. **Project Settings → API** 复制 **Project URL** 与 **Publishable key**，填入 `lib/config/cloud_config.dart`，重新构建即可
 
 未配置时 App 启动会显示明确的后端配置引导页，不会静默失败。
 
@@ -224,24 +229,12 @@ flutter build apk --release
 
 ### 验证码邮件定制（去除平台 Logo）
 
-Supabase 默认邮件模板带有 Supabase 品牌标识。定制方法：
-进入 Supabase 控制台 **Authentication → Email Templates → Magic Link**，
-粘贴以下内容（必须保留 `{{ .Token }}` 变量，即 6 位验证码）：
+Supabase 默认邮件模板既有平台 Logo，又是「点击链接」而不是 6 位数字验证码——这是登录
+失败的根因。**必须同时修改两个模板**（新用户走 Confirm signup，老用户走 Magic link），
+把链接替换成 `{{ .Token }}` 变量。两套可直接粘贴的 HTML 与逐图步骤见
+[`docs/setup_supabase.md`](docs/setup_supabase.md)（关键：模板里保留 `{{ .Token }}`，
+删除 `{{ .ConfirmationURL }}`，保存后立即生效）。
 
-```html
-<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F7F5F0;border-radius:12px">
-  <div style="text-align:center;margin-bottom:16px">
-    <div style="display:inline-block;width:56px;height:56px;line-height:56px;background:#660874;color:#ffffff;border-radius:14px;font-size:28px">🎓</div>
-    <h2 style="color:#660874;margin:8px 0 0">清华二手</h2>
-    <p style="color:#9e9e9e;font-size:12px;margin:4px 0 0">校园二手物品 · 校内面对面交易</p>
-  </div>
-  <p style="font-size:14px;color:#333333">你的验证码是：</p>
-  <p style="font-size:32px;font-weight:bold;color:#660874;letter-spacing:6px;text-align:center;margin:12px 0">{{ .Token }}</p>
-  <p style="font-size:12px;color:#999999">验证码 10 分钟内有效，请勿转发给他人。如非本人操作，请忽略本邮件。</p>
-</div>
-```
-
-保存后立即生效，新发送的验证码邮件即为清华二手品牌样式，不再带任何 Supabase Logo。
 如需自定义发件人，可在 **Project Settings → Authentication → SMTP** 配置自有 SMTP（可选）。
 
 ---
